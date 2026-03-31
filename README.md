@@ -16,6 +16,8 @@
 
 Project N.O.M.A.D. is a self-contained, offline-first knowledge and education server packed with critical tools, knowledge, and AI to keep you informed and empowered—anytime, anywhere.
 
+NOMAD is also **AI agent-first**: every capability is exposed as a callable tool via an MCP JSON-RPC 2.0 endpoint (`/mcp`), an OpenAI-compatible inference API (`/v1`), and a REST agent API (`/api/agent/*`) — so autonomous agents, LangChain pipelines, and tools like OpenClaw can talk directly to NOMAD's local services.
+
 ## Installation & Quickstart
 Project N.O.M.A.D. can be installed on any Debian-based operating system (we recommend Ubuntu). Installation is completely terminal-based, and all tools and resources are designed to be accessed through the browser, so there's no need for a desktop environment if you'd rather setup N.O.M.A.D. as a "server" and access it through other clients.
 
@@ -37,8 +39,10 @@ For more control over the installation process, copy and paste the [Docker Compo
 N.O.M.A.D. is a management UI ("Command Center") and API that orchestrates a collection of containerized tools and resources via [Docker](https://www.docker.com/). It handles installation, configuration, and updates for everything — so you don't have to.
 
 **Built-in capabilities include:**
-- **AI Chat with Knowledge Base** — local AI chat powered by [Ollama](https://ollama.com/), with document upload and semantic search (RAG via [Qdrant](https://qdrant.tech/))
+- **AI Chat with Knowledge Base** — local AI chat powered by [Ollama](https://ollama.com/), with document upload and semantic search (RAG via [Qdrant](https://qdrant.tech/)); can also route through [OpenRouter](https://openrouter.ai/) for cloud models
+- **AI Agent Layer** — MCP JSON-RPC 2.0 (`/mcp`), OpenAI-compatible API (`/v1`), agent status/setup/run endpoints (`/api/agent/*`), and a built-in Agent Console UI; supports multimodal input, tool calling, and agentic loops
 - **Information Library** — offline Wikipedia, medical references, ebooks, and more via [Kiwix](https://kiwix.org/)
+- **Internet Archive Mirror** — browse and cache 38M+ books, audio, video, and documents via [dweb-mirror](https://github.com/internetarchive/dweb-mirror)
 - **Education Platform** — Khan Academy courses with progress tracking via [Kolibri](https://learningequality.org/kolibri/)
 - **Offline Maps** — downloadable regional maps via [ProtoMaps](https://protomaps.com)
 - **Data Tools** — encryption, encoding, and analysis via [CyberChef](https://gchq.github.io/CyberChef/)
@@ -54,6 +58,8 @@ N.O.M.A.D. also includes built-in tools like a Wikipedia content selector, ZIM l
 |-----------|-----------|-------------|
 | Information Library | Kiwix | Offline Wikipedia, medical references, survival guides, ebooks |
 | AI Assistant | Ollama + Qdrant | Built-in chat with document upload and semantic search |
+| AI Agent Layer | Built-in | MCP tools, OpenAI-compat API, Agent Console UI, tool calling, agentic loops |
+| Internet Archive Mirror | dweb-mirror | 38M+ books, audio, video, and historical documents — cacheable offline |
 | Education Platform | Kolibri | Khan Academy courses, progress tracking, multi-user support |
 | Offline Maps | ProtoMaps | Downloadable regional maps with search and navigation |
 | Data Tools | CyberChef | Encryption, encoding, hashing, and data analysis |
