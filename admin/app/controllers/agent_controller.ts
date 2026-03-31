@@ -1,12 +1,15 @@
 import { DockerService } from '#services/docker_service'
 import { LlmService } from '#services/llm_service'
+import type { LlmMessage, LlmTool } from '#services/llm_service'
 import { OllamaService } from '#services/ollama_service'
 import { SystemService } from '#services/system_service'
 import { ZimService } from '#services/zim_service'
 import { DownloadService } from '#services/download_service'
+import McpController from '#controllers/mcp_controller'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
+import { NOMAD_MCP_TOOLS } from '../mcp/tools.js'
 
 @inject()
 export default class AgentController {
@@ -16,7 +19,8 @@ export default class AgentController {
     private ollamaService: OllamaService,
     private llmService: LlmService,
     private zimService: ZimService,
-    private downloadService: DownloadService
+    private downloadService: DownloadService,
+    private mcpController: McpController
   ) {}
 
   /**
@@ -149,6 +153,85 @@ export default class AgentController {
       success: !hasErrors,
       results,
       hint: 'Poll GET /api/downloads/jobs to track download progress.',
+    })
+  }
+
+  /**
+   * POST /api/agent/run
+   *
+   * Agentic execution endpoint — runs an autonomous reasoning loop.
+   * The LLM is given the full NOMAD MCP tool set (or a caller-specified
+   * subset) and autonomously decides which tools to call to complete the task.
+   * Tool results are fed back until the model produces a final answer or the
+   * iteration limit is reached.
+   *
+   * Request body:
+   * {
+   *   task:           string    // Task description (becomes the user message)
+   *   model?:         string    // Model override
+   *   system_prompt?: string    // System instruction override
+   *   tools?:         string[]  // Subset of NOMAD tool names to expose (default: all)
+   *   max_iterations?: number   // Safety ceiling (default: 10)
+   * }
+   */
+  async run({ request, response }: HttpContext) {
+    const body = request.body() as {
+      task?: string
+      model?: string
+      system_prompt?: string
+      tools?: string[]
+      max_iterations?: number
+    }
+
+    const task = body.task?.trim()
+    if (!task) {
+      return response.status(400).json({ error: 'Missing required field: task' })
+    }
+
+    const maxIterations = Math.min(typeof body.max_iterations === 'number' ? body.max_iterations : 10, 25)
+
+    // Determine which tools to expose
+    const requestedToolNames = new Set(Array.isArray(body.tools) && body.tools.length ? body.tools : [])
+    const exposedTools: LlmTool[] = NOMAD_MCP_TOOLS
+      .filter((t) => requestedToolNames.size === 0 || requestedToolNames.has(t.name))
+      .map((t) => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        },
+      }))
+
+    const installedModels = await this.llmService.getInstalledModels()
+    const model = body.model ?? installedModels?.[0]?.name ?? 'llama3.2:3b'
+
+    const systemPrompt = body.system_prompt ??
+      `You are an AI agent controlling a Project N.O.M.A.D. offline knowledge system. ` +
+      `Use the available tools to complete the user's task. ` +
+      `When you have all the information needed, provide a clear final answer without calling further tools.`
+
+    const messages: LlmMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: task },
+    ]
+
+    logger.info(`[AgentController] Starting agentic run — model: "${model}", max_iterations: ${maxIterations}, tools: ${exposedTools.length}`)
+
+    const result = await this.llmService.runAgenticLoop(
+      { model, messages, tools: exposedTools, tool_choice: 'auto' },
+      (name, args) => this.mcpController.executeToolCall(name, args),
+      maxIterations
+    )
+
+    return response.json({
+      success: true,
+      task,
+      model: result.model,
+      response: result.response,
+      iterations: result.iterations,
+      finish_reason: result.finish_reason,
+      trace: result.trace,
     })
   }
 }

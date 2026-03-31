@@ -5,4 +5,5 @@ export const SERVICE_NAMES = {
   CYBERCHEF: 'nomad_cyberchef',
   FLATNOTES: 'nomad_flatnotes',
   KOLIBRI: 'nomad_kolibri',
+  IA_MIRROR: 'nomad_ia_mirror',
 }

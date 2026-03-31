@@ -165,8 +165,25 @@ export default class McpController {
   }
 
   // ---------------------------------------------------------------------------
-  // Dispatcher
+  // Dispatcher (also callable by AgentController for the agentic loop)
   // ---------------------------------------------------------------------------
+
+  /**
+   * Execute a named NOMAD tool and return its raw result (not wrapped in MCP
+   * content format). Used by the agentic loop in AgentController so it can
+   * feed results back to the LLM as plain values.
+   */
+  async executeToolCall(name: string, args: Record<string, unknown>): Promise<unknown> {
+    const result = await this._dispatch(name, args)
+    if (result.isError) {
+      throw new Error(result.content[0]?.text ?? `Tool "${name}" failed`)
+    }
+    try {
+      return JSON.parse(result.content[0]?.text ?? 'null')
+    } catch {
+      return result.content[0]?.text ?? null
+    }
+  }
 
   private async _dispatch(name: string, args: Record<string, unknown>): Promise<McpResult> {
     switch (name) {

@@ -110,15 +110,15 @@ export default class OllamaController {
       const thinkingCapability = await this.llmService.checkModelHasThinking(reqData.model)
       const think: boolean | 'medium' = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
 
-      // Separate sessionId from the Ollama request payload — Ollama rejects unknown fields
-      const { sessionId, ...ollamaRequest } = reqData
+      // Separate sessionId from the LLM request payload
+      const { sessionId, ...chatPayload } = reqData
 
       // Save user message to DB before streaming if sessionId provided
       let userContent: string | null = null
       if (sessionId) {
         const lastUserMsg = [...reqData.messages].reverse().find((m) => m.role === 'user')
         if (lastUserMsg) {
-          userContent = lastUserMsg.content
+          userContent = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '[multimodal message]'
           await this.chatService.addMessage(sessionId, 'user', userContent)
         }
       }
@@ -126,7 +126,7 @@ export default class OllamaController {
       if (reqData.stream) {
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = this.llmService.chatStream({ ...ollamaRequest, think })
+        const stream = this.llmService.chatStream({ ...chatPayload, think })
         let fullContent = ''
         for await (const chunk of stream) {
           if (chunk.message?.content) {
@@ -149,8 +149,8 @@ export default class OllamaController {
         return
       }
 
-      // Non-streaming (legacy) path
-      const result = await this.llmService.chat({ ...ollamaRequest, think })
+      // Non-streaming path — includes tool_calls if model requested them
+      const result = await this.llmService.chat({ ...chatPayload, think })
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)

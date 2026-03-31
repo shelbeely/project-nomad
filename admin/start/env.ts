@@ -75,6 +75,8 @@ export default await Env.create(new URL('../', import.meta.url), {
   OPENROUTER_API_KEY: Env.schema.string.optional(),
   OPENROUTER_BASE_URL: Env.schema.string.optional(),
   OPENROUTER_DEFAULT_MODEL: Env.schema.string.optional(),
+  /** Vision/multimodal model used when messages contain image or video content. */
+  OPENROUTER_VISION_MODEL: Env.schema.string.optional(),
 
   /*
   |----------------------------------------------------------
