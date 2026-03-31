@@ -17,7 +17,7 @@ export default class extends BaseSchema {
 
       const storagePath = process.env.NOMAD_STORAGE_PATH ?? '/opt/project-nomad/storage'
 
-      await db.from(this.tableName).insert({
+      await db.table(this.tableName).insert({
         service_name: 'nomad_ia_mirror',
         friendly_name: 'Internet Archive Mirror',
         powered_by: 'Internet Archive / dweb-mirror',

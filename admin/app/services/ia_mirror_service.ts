@@ -38,7 +38,7 @@ export class IaMirrorService {
 
   private async _baseUrl(): Promise<string> {
     const url = await this.dockerService.getServiceURL(SERVICE_NAMES.IA_MIRROR)
-    if (!url) throw new Error('Internet Archive mirror is not installed or running. Install it via nomad_install_service with service_name "nomad_ia_mirror".')
+    if (!url) throw new Error('Internet Archive mirror is not installed or running. Install it via the nomad_install_service MCP tool with service_name "nomad_ia_mirror", or POST /api/agent/setup with {"services":["nomad_ia_mirror"]}.')
     return url
   }
 

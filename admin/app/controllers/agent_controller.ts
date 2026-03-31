@@ -11,6 +11,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import { NOMAD_MCP_TOOLS } from '../mcp/tools.js'
 
+const DEFAULT_MAX_ITERATIONS = 10
+const MAX_ITERATIONS_CEILING = 25
+
 @inject()
 export default class AgentController {
   constructor(
@@ -188,7 +191,7 @@ export default class AgentController {
       return response.status(400).json({ error: 'Missing required field: task' })
     }
 
-    const maxIterations = Math.min(typeof body.max_iterations === 'number' ? body.max_iterations : 10, 25)
+    const maxIterations = Math.min(typeof body.max_iterations === 'number' ? body.max_iterations : DEFAULT_MAX_ITERATIONS, MAX_ITERATIONS_CEILING)
 
     // Determine which tools to expose
     const requestedToolNames = new Set(Array.isArray(body.tools) && body.tools.length ? body.tools : [])

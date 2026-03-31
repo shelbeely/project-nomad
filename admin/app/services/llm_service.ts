@@ -512,17 +512,14 @@ export class LlmService {
       body.tool_choice = request.tool_choice ?? 'auto'
     }
 
-    let response: Awaited<ReturnType<typeof axios.post>>
-    try {
-      response = await axios.post(
-        `${this._openRouterBaseUrl()}/chat/completions`,
-        body,
-        { headers: this._openRouterHeaders(), responseType: 'stream' }
-      )
-    } catch (error) {
+    const response = await axios.post<NodeJS.ReadableStream>(
+      `${this._openRouterBaseUrl()}/chat/completions`,
+      body,
+      { headers: this._openRouterHeaders(), responseType: 'stream' }
+    ).catch((error: unknown) => {
       logger.error(`[LlmService] OpenRouter stream request failed: ${error instanceof Error ? error.message : error}`)
       throw error
-    }
+    })
 
     // Accumulate streaming tool_call argument fragments (OpenAI delta protocol)
     const pendingToolCalls: Record<number, {

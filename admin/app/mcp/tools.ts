@@ -34,12 +34,12 @@ export const NOMAD_MCP_TOOLS: McpTool[] = [
   {
     name: 'nomad_install_service',
     description:
-      'Install a NOMAD service by its service_name (e.g. nomad_kiwix_server, nomad_ollama, nomad_qdrant, nomad_flatnotes, nomad_cyberchef, nomad_kolibri, nomad_ia_mirror).',
+      'Install a NOMAD service by its service_name. Call nomad_list_services first to get the current list of installable service names.',
     inputSchema: {
       type: 'object',
       required: ['service_name'],
       properties: {
-        service_name: { type: 'string', description: 'Internal service identifier' },
+        service_name: { type: 'string', description: 'Internal service identifier (e.g. nomad_ollama). Call nomad_list_services to enumerate available names.' },
       },
     },
   },
