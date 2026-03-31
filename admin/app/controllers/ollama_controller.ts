@@ -1,11 +1,12 @@
 import { ChatService } from '#services/chat_service'
+import { LlmService } from '#services/llm_service'
 import { OllamaService } from '#services/ollama_service'
 import { RagService } from '#services/rag_service'
 import { modelNameSchema } from '#validators/download'
 import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
-import { DEFAULT_QUERY_REWRITE_MODEL, RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
+import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
 
@@ -14,7 +15,8 @@ export default class OllamaController {
   constructor(
     private chatService: ChatService,
     private ollamaService: OllamaService,
-    private ragService: RagService
+    private ragService: RagService,
+    private llmService: LlmService
   ) { }
 
   async availableModels({ request }: HttpContext) {
@@ -105,7 +107,7 @@ export default class OllamaController {
 
       // Check if the model supports "thinking" capability for enhanced response generation
       // If gpt-oss model, it requires a text param for "think" https://docs.ollama.com/api/chat
-      const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
+      const thinkingCapability = await this.llmService.checkModelHasThinking(reqData.model)
       const think: boolean | 'medium' = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
 
       // Separate sessionId from the Ollama request payload — Ollama rejects unknown fields
@@ -124,7 +126,7 @@ export default class OllamaController {
       if (reqData.stream) {
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...ollamaRequest, think })
+        const stream = this.llmService.chatStream({ ...ollamaRequest, think })
         let fullContent = ''
         for await (const chunk of stream) {
           if (chunk.message?.content) {
@@ -148,7 +150,7 @@ export default class OllamaController {
       }
 
       // Non-streaming (legacy) path
-      const result = await this.ollamaService.chat({ ...ollamaRequest, think })
+      const result = await this.llmService.chat({ ...ollamaRequest, think })
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
@@ -190,7 +192,7 @@ export default class OllamaController {
   }
 
   async installedModels({ }: HttpContext) {
-    return await this.ollamaService.getModels()
+    return await this.llmService.getInstalledModels()
   }
 
   /**
@@ -237,17 +239,19 @@ export default class OllamaController {
         })
         .join('\n')
 
-      const installedModels = await this.ollamaService.getModels(true)
-      const rewriteModelAvailable = installedModels?.some(model => model.name === DEFAULT_QUERY_REWRITE_MODEL)
+      const rewriteModelAvailable = await this.llmService.isRewriteModelAvailable()
       if (!rewriteModelAvailable) {
-        logger.warn(`[RAG] Query rewrite model "${DEFAULT_QUERY_REWRITE_MODEL}" not available. Skipping query rewriting.`)
+        const rewriteModel = this.llmService.getRewriteModel()
+        logger.warn(`[RAG] Query rewrite model "${rewriteModel}" not available. Skipping query rewriting.`)
         const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user')
         return lastUserMessage?.content || null
       }
 
+      const rewriteModel = this.llmService.getRewriteModel()
+
       // FUTURE ENHANCEMENT: allow the user to specify which model to use for rewriting
-      const response = await this.ollamaService.chat({
-        model: DEFAULT_QUERY_REWRITE_MODEL,
+      const response = await this.llmService.chat({
+        model: rewriteModel,
         messages: [
           {
             role: 'system',
