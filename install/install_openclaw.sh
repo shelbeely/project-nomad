@@ -7,6 +7,38 @@
 #   - Debian/Ubuntu host
 #   - Docker Engine 24+ and Docker Compose v2 already installed
 #   - Project N.O.M.A.D. management stack running (management_compose.yaml)
+#
+# ─── Non-interactive / automated usage ───────────────────────────────────────
+#
+#  Pass --non-interactive (or -y) to skip all prompts.  Every value can be
+#  supplied as a CLI flag or as a pre-set environment variable:
+#
+#  Flag                         Env var                    Default
+#  --provider <ollama|openrouter>  OPENCLAW_PROVIDER        ollama
+#  --token <string>             OPENCLAW_GATEWAY_TOKEN     (auto-generated)
+#  --openrouter-key <key>       OPENCLAW_OPENROUTER_KEY    (required for openrouter)
+#  --model <model>              OPENCLAW_DEFAULT_MODEL     openai/gpt-4o-mini (openrouter)
+#  --nomad-api-key <key>        NOMAD_API_KEY              (auto-detected from compose)
+#  --nomad-dir <path>           NOMAD_INSTALL_DIR          /opt/project-nomad
+#
+#  Examples:
+#
+#    # Ollama provider, auto-generated token:
+#    sudo bash install_openclaw.sh --non-interactive
+#
+#    # OpenRouter provider, fully scripted:
+#    sudo bash install_openclaw.sh -y \
+#      --provider openrouter \
+#      --openrouter-key sk-or-v1-... \
+#      --model openai/gpt-4o-mini \
+#      --token my-dashboard-password
+#
+#    # Via environment variables (e.g. cloud-init, Ansible):
+#    export OPENCLAW_PROVIDER=openrouter
+#    export OPENCLAW_OPENROUTER_KEY=sk-or-v1-...
+#    sudo -E bash install_openclaw.sh --non-interactive
+#
+# ─────────────────────────────────────────────────────────────────────────────
 
 ###############################################################################
 #  Colour helpers
@@ -16,10 +48,55 @@ GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
 RED='\033[1;31m'
 
-NOMAD_DIR="/opt/project-nomad"
+###############################################################################
+#  Defaults (overridden by flags / env vars below)
+###############################################################################
+NOMAD_DIR="${NOMAD_INSTALL_DIR:-/opt/project-nomad}"
 OPENCLAW_COMPOSE_URL="https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/install/openclaw_compose.yaml"
 OPENCLAW_DIR="${NOMAD_DIR}/openclaw"
 COMPOSE_FILE="${NOMAD_DIR}/openclaw_compose.yaml"
+
+NON_INTERACTIVE=false
+
+# Values that can come from env vars or flags
+GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
+AI_PROVIDER="${OPENCLAW_PROVIDER:-}"
+OPENROUTER_KEY="${OPENCLAW_OPENROUTER_KEY:-}"
+DEFAULT_MODEL="${OPENCLAW_DEFAULT_MODEL:-}"
+NOMAD_API_KEY_OVERRIDE="${NOMAD_API_KEY:-}"
+
+###############################################################################
+#  Argument parsing
+###############################################################################
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --non-interactive|-y)
+      NON_INTERACTIVE=true
+      shift ;;
+    --provider)
+      AI_PROVIDER="$2"; shift 2 ;;
+    --token)
+      GATEWAY_TOKEN="$2"; shift 2 ;;
+    --openrouter-key)
+      OPENROUTER_KEY="$2"; shift 2 ;;
+    --model)
+      DEFAULT_MODEL="$2"; shift 2 ;;
+    --nomad-api-key)
+      NOMAD_API_KEY_OVERRIDE="$2"; shift 2 ;;
+    --nomad-dir)
+      NOMAD_DIR="$2"
+      OPENCLAW_DIR="${NOMAD_DIR}/openclaw"
+      COMPOSE_FILE="${NOMAD_DIR}/openclaw_compose.yaml"
+      shift 2 ;;
+    --help|-h)
+      sed -n '/^# ─── Non-interactive/,/^# ───────/p' "$0"
+      exit 0 ;;
+    *)
+      echo -e "${RED}Unknown argument: $1${RESET}" >&2
+      echo "Run with --help for usage." >&2
+      exit 1 ;;
+  esac
+done
 
 ###############################################################################
 #  Helper functions
@@ -27,66 +104,59 @@ COMPOSE_FILE="${NOMAD_DIR}/openclaw_compose.yaml"
 header()     { echo -e "\n${GREEN}#########################################################################${RESET}"; }
 header_red() { echo -e "\n${RED}#########################################################################${RESET}"; }
 
+die() { header_red; echo -e "${RED}#${RESET} $*"; exit 1; }
+
+check_bash() {
+  [[ -n "$BASH_VERSION" ]] || die "Run with bash: bash $(basename "$0")"
+}
+
 check_sudo() {
-  if ! sudo -n true 2>/dev/null; then
-    header_red
-    echo -e "${RED}#${RESET} This script requires sudo. Re-run as: sudo bash $(basename "$0")"
-    exit 1
-  fi
+  sudo -n true 2>/dev/null || die "This script requires sudo. Re-run as: sudo bash $(basename "$0")"
   echo -e "${GREEN}#${RESET} sudo OK."
 }
 
-check_bash() {
-  if [[ -z "$BASH_VERSION" ]]; then
-    header_red
-    echo -e "${RED}#${RESET} Run with bash: bash $(basename "$0")"
-    exit 1
-  fi
-}
-
 check_debian() {
-  if [[ ! -f /etc/debian_version ]]; then
-    header_red
-    echo -e "${RED}#${RESET} This script requires a Debian/Ubuntu host."
-    exit 1
-  fi
+  [[ -f /etc/debian_version ]] || die "This script requires a Debian/Ubuntu host."
   echo -e "${GREEN}#${RESET} Debian-based OS detected."
 }
 
 check_docker() {
-  if ! command -v docker &>/dev/null; then
-    header_red
-    echo -e "${RED}#${RESET} Docker is not installed. Install Docker Engine first, then re-run this script."
-    exit 1
-  fi
-  if ! docker compose version &>/dev/null; then
-    header_red
-    echo -e "${RED}#${RESET} Docker Compose v2 plugin not found. Install it first."
-    exit 1
-  fi
+  command -v docker &>/dev/null || die "Docker is not installed. Install Docker Engine first."
+  docker compose version &>/dev/null || die "Docker Compose v2 plugin not found. Install it first."
   echo -e "${GREEN}#${RESET} Docker and Docker Compose v2 found."
 }
 
 check_nomad_network() {
-  if ! docker network inspect project-nomad_default &>/dev/null; then
-    header_red
-    echo -e "${RED}#${RESET} The 'project-nomad_default' Docker network does not exist."
-    echo -e "${RED}#${RESET} Start the NOMAD management stack first:"
-    echo -e "${RED}#${RESET}   cd ${NOMAD_DIR} && docker compose -f management_compose.yaml up -d"
-    exit 1
-  fi
+  docker network inspect project-nomad_default &>/dev/null || \
+    die "The 'project-nomad_default' Docker network does not exist.\n#  Start the NOMAD management stack first:\n#    cd ${NOMAD_DIR} && docker compose -f management_compose.yaml up -d"
   echo -e "${GREEN}#${RESET} NOMAD Docker network found."
 }
 
-###############################################################################
-#  Token generation
-###############################################################################
 generate_token() {
   tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 64 | head -n 1
 }
 
+# Prompt helper — skips and uses default when non-interactive
+# Usage: prompt_value "Question text" default_var "fallback"
+# Sets the named variable.
+ask() {
+  local prompt="$1" varname="$2" default="$3"
+  if $NON_INTERACTIVE; then
+    # Use whatever is already set in the variable, or fall back to default
+    [[ -z "${!varname}" ]] && printf -v "$varname" '%s' "$default"
+    return
+  fi
+  echo -e "${YELLOW}${prompt}${RESET}"
+  read -r -p "> " _input
+  if [[ -z "$_input" ]]; then
+    printf -v "$varname" '%s' "${!varname:-$default}"
+  else
+    printf -v "$varname" '%s' "$_input"
+  fi
+}
+
 ###############################################################################
-#  Main
+#  Pre-flight checks
 ###############################################################################
 check_bash
 check_sudo
@@ -96,80 +166,106 @@ check_nomad_network
 
 header
 echo -e "${GREEN}#  OpenClaw Agent Runtime — Installer${RESET}"
+if $NON_INTERACTIVE; then
+  echo -e "${GREEN}#  Running in non-interactive mode.${RESET}"
+fi
 echo -e "${GREEN}#  Deploys OpenClaw as a sibling container on the NOMAD Docker network.${RESET}"
 header
 
-# ── Directories ───────────────────────────────────────────────────────────────
+###############################################################################
+#  Directories
+###############################################################################
 echo -e "\n${GREEN}#${RESET} Creating OpenClaw directories in ${OPENCLAW_DIR}..."
 sudo mkdir -p "${OPENCLAW_DIR}/config" "${OPENCLAW_DIR}/workspace"
 
-# ── Download compose file ─────────────────────────────────────────────────────
+###############################################################################
+#  Download compose template
+###############################################################################
 echo -e "${GREEN}#${RESET} Downloading openclaw_compose.yaml..."
-sudo curl -fsSL "${OPENCLAW_COMPOSE_URL}" -o "${COMPOSE_FILE}"
-if [[ $? -ne 0 ]]; then
-  header_red
-  echo -e "${RED}#${RESET} Failed to download openclaw_compose.yaml. Check your internet connection."
-  exit 1
-fi
+sudo curl -fsSL "${OPENCLAW_COMPOSE_URL}" -o "${COMPOSE_FILE}" \
+  || die "Failed to download openclaw_compose.yaml. Check your internet connection."
 
-# ── Gateway token ─────────────────────────────────────────────────────────────
-echo ""
-echo -e "${YELLOW}Enter a gateway token for the OpenClaw dashboard (press Enter to auto-generate):${RESET}"
-read -r -p "> " GATEWAY_TOKEN
+###############################################################################
+#  Gateway token
+###############################################################################
 if [[ -z "$GATEWAY_TOKEN" ]]; then
-  GATEWAY_TOKEN=$(generate_token)
-  echo -e "  Generated token: ${GATEWAY_TOKEN}"
+  if $NON_INTERACTIVE; then
+    GATEWAY_TOKEN=$(generate_token)
+    echo -e "${GREEN}#${RESET} Auto-generated gateway token."
+  else
+    ask "Enter a gateway token for the OpenClaw dashboard (press Enter to auto-generate):" GATEWAY_TOKEN ""
+    [[ -z "$GATEWAY_TOKEN" ]] && GATEWAY_TOKEN=$(generate_token) && echo -e "  Generated token: ${GATEWAY_TOKEN}"
+  fi
 fi
 
-# ── AI provider selection ─────────────────────────────────────────────────────
-echo ""
-echo -e "${YELLOW}Which AI provider should OpenClaw use?${RESET}"
-echo -e "  1) Ollama (default, fully offline — uses NOMAD's local Ollama)"
-echo -e "  2) OpenRouter (cloud — requires an API key)"
-read -r -p "Enter 1 or 2 [1]: " PROVIDER_CHOICE
-PROVIDER_CHOICE="${PROVIDER_CHOICE:-1}"
+###############################################################################
+#  AI provider selection
+###############################################################################
+if [[ -z "$AI_PROVIDER" ]]; then
+  if $NON_INTERACTIVE; then
+    AI_PROVIDER="ollama"
+    echo -e "${GREEN}#${RESET} Defaulting to Ollama provider (non-interactive)."
+  else
+    echo ""
+    echo -e "${YELLOW}Which AI provider should OpenClaw use?${RESET}"
+    echo -e "  1) Ollama (default, fully offline — uses NOMAD's local Ollama)"
+    echo -e "  2) OpenRouter (cloud — requires an API key)"
+    read -r -p "Enter 1 or 2 [1]: " PROVIDER_CHOICE
+    [[ "${PROVIDER_CHOICE:-1}" == "2" ]] && AI_PROVIDER="openrouter" || AI_PROVIDER="ollama"
+  fi
+fi
 
-if [[ "$PROVIDER_CHOICE" == "2" ]]; then
-  AI_PROVIDER="openrouter"
-  echo ""
-  echo -e "${YELLOW}Enter your OpenRouter API key (sk-or-v1-...):${RESET}"
-  read -r -p "> " OPENROUTER_KEY
+###############################################################################
+#  Provider-specific configuration
+###############################################################################
+if [[ "$AI_PROVIDER" == "openrouter" ]]; then
+  # OpenRouter key
   if [[ -z "$OPENROUTER_KEY" ]]; then
-    header_red
-    echo -e "${RED}#${RESET} OpenRouter API key is required for OpenRouter provider. Aborting."
-    exit 1
+    if $NON_INTERACTIVE; then
+      die "OpenRouter provider requires --openrouter-key or OPENCLAW_OPENROUTER_KEY env var."
+    fi
+    ask "Enter your OpenRouter API key (sk-or-v1-...):" OPENROUTER_KEY ""
+    [[ -z "$OPENROUTER_KEY" ]] && die "OpenRouter API key is required."
   fi
 
-  echo ""
-  echo -e "${YELLOW}Enter the default OpenRouter model (e.g. openai/gpt-4o-mini) [openai/gpt-4o-mini]:${RESET}"
-  read -r -p "> " DEFAULT_MODEL
-  DEFAULT_MODEL="${DEFAULT_MODEL:-openai/gpt-4o-mini}"
+  # Default model
+  if [[ -z "$DEFAULT_MODEL" ]]; then
+    if $NON_INTERACTIVE; then
+      DEFAULT_MODEL="openai/gpt-4o-mini"
+    else
+      ask "Enter the default OpenRouter model [openai/gpt-4o-mini]:" DEFAULT_MODEL "openai/gpt-4o-mini"
+    fi
+  fi
+
   OPENAI_BASE_URL="https://openrouter.ai/api/v1"
   OPENAI_API_KEY="$OPENROUTER_KEY"
+  NOMAD_KEY=""
+
 else
+  # Ollama (default)
   AI_PROVIDER="ollama"
   OPENAI_BASE_URL="http://nomad_admin:8080/v1"
-  OPENAI_API_KEY="none"
   DEFAULT_MODEL=""
 
-  # Check for NOMAD API key on this host
-  # Try to detect NOMAD_API_KEY from the management compose file.
-  # The value lives under an `environment:` block, e.g.:
-  #   - NOMAD_API_KEY=mysecretkey
-  #   - NOMAD_API_KEY="quoted value"
-  NOMAD_KEY=""
-  if [[ -f "${NOMAD_DIR}/management_compose.yaml" ]]; then
+  # Detect or use supplied NOMAD_API_KEY
+  NOMAD_KEY="$NOMAD_API_KEY_OVERRIDE"
+  if [[ -z "$NOMAD_KEY" && -f "${NOMAD_DIR}/management_compose.yaml" ]]; then
     NOMAD_KEY=$(grep -E '^\s*-?\s*NOMAD_API_KEY=' "${NOMAD_DIR}/management_compose.yaml" \
       | grep -v '^\s*#' | head -1 \
       | sed -E 's/.*NOMAD_API_KEY=//; s/^["'"'"']//; s/["'"'"']$//' | xargs)
   fi
+
   if [[ -n "$NOMAD_KEY" ]]; then
-    echo -e "\n${YELLOW}Detected NOMAD_API_KEY in management_compose.yaml. Using it to authenticate OpenClaw → NOMAD calls.${RESET}"
+    echo -e "${GREEN}#${RESET} Detected NOMAD_API_KEY — will authenticate OpenClaw → NOMAD calls."
     OPENAI_API_KEY="$NOMAD_KEY"
+  else
+    OPENAI_API_KEY="none"
   fi
 fi
 
-# ── Patch compose file ────────────────────────────────────────────────────────
+###############################################################################
+#  Patch compose file
+###############################################################################
 echo -e "\n${GREEN}#${RESET} Applying configuration..."
 sudo sed -i "s|OPENCLAW_GATEWAY_TOKEN=replaceme|OPENCLAW_GATEWAY_TOKEN=${GATEWAY_TOKEN}|" "${COMPOSE_FILE}"
 sudo sed -i "s|OPENCLAW_AI_PROVIDER=ollama|OPENCLAW_AI_PROVIDER=${AI_PROVIDER}|" "${COMPOSE_FILE}"
@@ -177,30 +273,26 @@ sudo sed -i "s|OPENAI_BASE_URL=http://nomad_admin:8080/v1|OPENAI_BASE_URL=${OPEN
 sudo sed -i "s|OPENAI_API_KEY=none|OPENAI_API_KEY=${OPENAI_API_KEY}|" "${COMPOSE_FILE}"
 
 if [[ -n "$DEFAULT_MODEL" ]]; then
-  # Uncomment and set the default model line
   sudo sed -i "s|# - OPENCLAW_DEFAULT_MODEL=.*|- OPENCLAW_DEFAULT_MODEL=${DEFAULT_MODEL}|" "${COMPOSE_FILE}"
 fi
 
 if [[ -n "$NOMAD_KEY" ]]; then
-  # Uncomment and set the MCP token line
   sudo sed -i "s|# - OPENCLAW_MCP_NOMAD_TOKEN=replaceme|- OPENCLAW_MCP_NOMAD_TOKEN=${NOMAD_KEY}|" "${COMPOSE_FILE}"
 fi
 
-# ── Pull and start ────────────────────────────────────────────────────────────
+###############################################################################
+#  Pull image and start
+###############################################################################
 echo -e "\n${GREEN}#${RESET} Pulling OpenClaw image..."
 docker pull openclaw/gateway:latest
 
 echo -e "\n${GREEN}#${RESET} Starting OpenClaw..."
-docker compose -f "${COMPOSE_FILE}" up -d
+docker compose -f "${COMPOSE_FILE}" up -d \
+  || die "Failed to start OpenClaw.\n  Check logs: docker compose -f ${COMPOSE_FILE} logs"
 
-if [[ $? -ne 0 ]]; then
-  header_red
-  echo -e "${RED}#${RESET} Failed to start OpenClaw. Check logs:"
-  echo -e "    docker compose -f ${COMPOSE_FILE} logs"
-  exit 1
-fi
-
-# ── Summary ───────────────────────────────────────────────────────────────────
+###############################################################################
+#  Summary
+###############################################################################
 header
 echo -e "${GREEN}#  OpenClaw is running!${RESET}"
 echo ""
@@ -215,15 +307,15 @@ else
 fi
 echo ""
 echo -e "  OpenClaw has access to all NOMAD services over the Docker network:"
-echo -e "    MCP tools           → http://nomad_admin:8080/mcp"
-echo -e "    Ollama direct       → http://nomad_ollama:11434"
-echo -e "    Qdrant              → http://nomad_qdrant:6333"
+echo -e "    MCP tools     → http://nomad_admin:8080/mcp"
+echo -e "    Ollama direct → http://nomad_ollama:11434"
+echo -e "    Qdrant        → http://nomad_qdrant:6333"
 echo ""
 echo -e "  To switch providers later, edit ${COMPOSE_FILE} and run:"
 echo -e "    docker compose -f ${COMPOSE_FILE} up -d"
 echo ""
 echo -e "  Management scripts:"
-echo -e "    Start  : sudo bash ${NOMAD_DIR}/start_openclaw.sh"
-echo -e "    Stop   : sudo bash ${NOMAD_DIR}/stop_openclaw.sh"
-echo -e "    Logs   : docker compose -f ${COMPOSE_FILE} logs -f"
+echo -e "    Start : sudo bash ${NOMAD_DIR}/start_openclaw.sh"
+echo -e "    Stop  : sudo bash ${NOMAD_DIR}/stop_openclaw.sh"
+echo -e "    Logs  : docker compose -f ${COMPOSE_FILE} logs -f"
 header
