@@ -9,7 +9,7 @@
  *   - /.well-known/agents.json  → JSON (part of agent card)
  */
 
-export interface NomadSkill {
+import { stringify as yamlStringify } from 'yaml'
   id: string
   name: string
   description: string
@@ -213,21 +213,7 @@ export function generateSkillsMd(baseUrl: string): string {
     })),
   }
 
-  const yamlLines = (obj: unknown, indent = 0): string => {
-    if (typeof obj === 'string') return JSON.stringify(obj)
-    if (typeof obj === 'number' || typeof obj === 'boolean') return String(obj)
-    if (obj === null) return 'null'
-    if (Array.isArray(obj)) {
-      return '\n' + obj.map((item) => ' '.repeat(indent) + '  - ' + yamlLines(item, indent + 4)).join('\n')
-    }
-    return '\n' + Object.entries(obj as Record<string, unknown>)
-      .map(([k, v]) => ' '.repeat(indent) + '  ' + k + ': ' + yamlLines(v, indent + 2))
-      .join('\n')
-  }
-
-  const fm = Object.entries(frontmatter)
-    .map(([k, v]) => `${k}: ${yamlLines(v)}`)
-    .join('\n')
+  const fm = yamlStringify(frontmatter, { lineWidth: 0 }).trimEnd()
 
   const skillsSections = NOMAD_SKILLS.map((s) => {
     const inputTable = s.inputs.length

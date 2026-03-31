@@ -247,6 +247,7 @@ export default function AgentToolsPage(props: {
                     <a
                       href={`/mcp/tools`}
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="text-xs text-text-secondary hover:text-desert-green transition-colors"
                     >
                       View full schema JSON ↗

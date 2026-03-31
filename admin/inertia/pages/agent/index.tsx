@@ -152,13 +152,13 @@ export default function AgentIndexPage(props: {
               <a href="/agent/tools" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
                 <IconTools size={16} /> Explore Tools
               </a>
-              <a href="/api/agent/tools" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
+              <a href="/api/agent/tools" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
                 OpenAI Tools JSON
               </a>
-              <a href="/.well-known/agents.json" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
+              <a href="/.well-known/agents.json" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
                 Agent Card
               </a>
-              <a href="/openapi.json" target="_blank" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
+              <a href="/openapi.json" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-surface-secondary text-text-primary px-4 py-2 text-sm font-medium hover:bg-desert-green-light hover:text-white transition-colors">
                 OpenAPI Spec
               </a>
             </div>
@@ -230,7 +230,7 @@ export default function AgentIndexPage(props: {
                   <span className={`shrink-0 w-12 text-center rounded px-1 py-0.5 text-[10px] font-bold ${method === 'GET' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-desert-green/10 text-desert-green'}`}>
                     {method}
                   </span>
-                  <a href={path} target="_blank" className="text-desert-green hover:underline shrink-0">{path}</a>
+                  <a href={path} target="_blank" rel="noopener noreferrer" className="text-desert-green hover:underline shrink-0">{path}</a>
                   <span className="text-text-secondary hidden sm:block">{desc}</span>
                 </div>
               ))}

@@ -37,6 +37,7 @@ const StyledSidebar: React.FC<StyledSidebarProps> = ({ title, items }) => {
         <a
           href={item.href}
           target={item.target}
+          rel={item.target === '_blank' ? 'noopener noreferrer' : undefined}
           className={classNames(
             item.current
               ? 'bg-desert-green text-white'
