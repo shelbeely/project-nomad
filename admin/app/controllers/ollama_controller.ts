@@ -1,5 +1,6 @@
 import { ChatService } from '#services/chat_service'
 import { OllamaService } from '#services/ollama_service'
+import { ExternalApiService } from '#services/external_api_service'
 import { RagService } from '#services/rag_service'
 import { modelNameSchema } from '#validators/download'
 import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
@@ -8,14 +9,21 @@ import type { HttpContext } from '@adonisjs/core/http'
 import { DEFAULT_QUERY_REWRITE_MODEL, RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import logger from '@adonisjs/core/services/logger'
 import type { Message } from 'ollama'
+import KVStore from '#models/kv_store'
 
 @inject()
 export default class OllamaController {
   constructor(
     private chatService: ChatService,
     private ollamaService: OllamaService,
-    private ragService: RagService
+    private ragService: RagService,
+    private externalApiService: ExternalApiService
   ) { }
+
+  private async _isExternalChatProvider(): Promise<boolean> {
+    const provider = (await KVStore.getValue('ai.chatProvider')) ?? 'ollama'
+    return provider === 'openai_compatible'
+  }
 
   async availableModels({ request }: HttpContext) {
     const reqData = await request.validateUsing(getAvailableModelsSchema)
@@ -30,6 +38,7 @@ export default class OllamaController {
 
   async chat({ request, response }: HttpContext) {
     const reqData = await request.validateUsing(chatSchema)
+    const isExternal = await this._isExternalChatProvider()
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
@@ -52,11 +61,17 @@ export default class OllamaController {
         reqData.messages.unshift(systemPrompt)
       }
 
-      // Query rewriting for better RAG retrieval with manageable context
-      // Will return user's latest message if no rewriting is needed
-      const rewrittenQuery = await this.rewriteQueryWithContext(reqData.messages)
+      // Query rewriting is only available when Ollama is the chat provider,
+      // as it requires a locally installed rewrite model.
+      let rewrittenQuery: string | null
+      if (isExternal) {
+        const lastUserMsg = [...reqData.messages].reverse().find((m) => m.role === 'user')
+        rewrittenQuery = lastUserMsg?.content || null
+      } else {
+        rewrittenQuery = await this.rewriteQueryWithContext(reqData.messages)
+      }
 
-      logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
+      logger.debug(`[OllamaController] Query for RAG: "${rewrittenQuery}"`)
       if (rewrittenQuery) {
         const relevantDocs = await this.ragService.searchSimilarDocuments(
           rewrittenQuery,
@@ -103,10 +118,12 @@ export default class OllamaController {
         }
       }
 
-      // Check if the model supports "thinking" capability for enhanced response generation
-      // If gpt-oss model, it requires a text param for "think" https://docs.ollama.com/api/chat
-      const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
-      const think: boolean | 'medium' = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
+      // "Thinking" capability is only supported by local Ollama models
+      let think: boolean | 'medium' = false
+      if (!isExternal) {
+        const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
+        think = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
+      }
 
       // Separate sessionId from the Ollama request payload — Ollama rejects unknown fields
       const { sessionId, ...ollamaRequest } = reqData
@@ -122,16 +139,27 @@ export default class OllamaController {
       }
 
       if (reqData.stream) {
-        logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
+        logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" (provider: ${isExternal ? 'external' : 'ollama'})`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...ollamaRequest, think })
         let fullContent = ''
-        for await (const chunk of stream) {
-          if (chunk.message?.content) {
-            fullContent += chunk.message.content
+
+        if (isExternal) {
+          for await (const chunk of this.externalApiService.chatStream(ollamaRequest.messages, reqData.model)) {
+            if (chunk.message?.content) {
+              fullContent += chunk.message.content
+            }
+            response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
           }
-          response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
+        } else {
+          const stream = await this.ollamaService.chatStream({ ...ollamaRequest, think })
+          for await (const chunk of stream) {
+            if (chunk.message?.content) {
+              fullContent += chunk.message.content
+            }
+            response.response.write(`data: ${JSON.stringify(chunk)}\n\n`)
+          }
         }
+
         response.response.end()
 
         // Save assistant message and optionally generate title
@@ -147,8 +175,10 @@ export default class OllamaController {
         return
       }
 
-      // Non-streaming (legacy) path
-      const result = await this.ollamaService.chat({ ...ollamaRequest, think })
+      // Non-streaming path
+      const result = isExternal
+        ? await this.externalApiService.chat(ollamaRequest.messages, reqData.model)
+        : await this.ollamaService.chat({ ...ollamaRequest, think })
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
@@ -171,7 +201,10 @@ export default class OllamaController {
     }
   }
 
-  async deleteModel({ request }: HttpContext) {
+  async deleteModel({ request, response }: HttpContext) {
+    if (await this._isExternalChatProvider()) {
+      return response.status(400).json({ success: false, message: 'Model management is not available when using an external AI provider.' })
+    }
     const reqData = await request.validateUsing(modelNameSchema)
     await this.ollamaService.deleteModel(reqData.model)
     return {
@@ -180,7 +213,10 @@ export default class OllamaController {
     }
   }
 
-  async dispatchModelDownload({ request }: HttpContext) {
+  async dispatchModelDownload({ request, response }: HttpContext) {
+    if (await this._isExternalChatProvider()) {
+      return response.status(400).json({ success: false, message: 'Model downloads are not available when using an external AI provider.' })
+    }
     const reqData = await request.validateUsing(modelNameSchema)
     await this.ollamaService.dispatchModelDownload(reqData.model)
     return {
@@ -190,6 +226,12 @@ export default class OllamaController {
   }
 
   async installedModels({ }: HttpContext) {
+    if (await this._isExternalChatProvider()) {
+      const model = (await KVStore.getValue('ai.externalChatModel')) ?? ''
+      if (!model) return []
+      // Return a minimal ModelResponse-compatible object so the chat UI can populate the model selector
+      return [{ name: model, model, modified_at: new Date(), size: 0, digest: '', details: {} }]
+    }
     return await this.ollamaService.getModels()
   }
 

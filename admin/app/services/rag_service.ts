@@ -9,6 +9,7 @@ import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
 import { fromBuffer } from 'pdf2pic'
 import { OllamaService } from './ollama_service.js'
+import { ExternalApiService } from './external_api_service.js'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
 import { removeStopwords } from 'stopword'
 import { randomUUID } from 'node:crypto'
@@ -39,8 +40,68 @@ export class RagService {
 
   constructor(
     private dockerService: DockerService,
-    private ollamaService: OllamaService
+    private ollamaService: OllamaService,
+    private externalApiService: ExternalApiService
   ) { }
+
+  private async _isExternalEmbeddingProvider(): Promise<boolean> {
+    const provider = (await KVStore.getValue('ai.embeddingProvider')) ?? 'ollama'
+    return provider === 'openai_compatible'
+  }
+
+  private async _getEmbeddingDimension(): Promise<number> {
+    if (await this._isExternalEmbeddingProvider()) {
+      const config = await this.externalApiService.getEmbeddingConfig()
+      return config.dimension
+    }
+    return RagService.EMBEDDING_DIMENSION
+  }
+
+  /**
+   * Generates embeddings for a batch of texts using the configured provider
+   * (local Ollama or an external OpenAI-compatible API).
+   */
+  private async _generateEmbeddings(texts: string[]): Promise<number[][]> {
+    if (await this._isExternalEmbeddingProvider()) {
+      return this.externalApiService.embed(texts)
+    }
+
+    const ollamaClient = await this.ollamaService.getClient()
+    const response = await ollamaClient.embed({
+      model: RagService.EMBEDDING_MODEL,
+      input: texts,
+    })
+    return response.embeddings
+  }
+
+  /**
+   * Ensures the embedding model is ready. For Ollama, verifies (and optionally
+   * downloads) the embedding model. For external providers, this is a no-op.
+   */
+  private async _ensureEmbeddingReady(): Promise<boolean> {
+    if (await this._isExternalEmbeddingProvider()) {
+      return true
+    }
+
+    if (this.embeddingModelVerified) return true
+
+    const allModels = await this.ollamaService.getModels(true)
+    const embeddingModel = allModels.find((m) => m.name === RagService.EMBEDDING_MODEL)
+    if (!embeddingModel) {
+      try {
+        const downloadResult = await this.ollamaService.downloadModel(RagService.EMBEDDING_MODEL)
+        if (!downloadResult.success) {
+          logger.error(`[RAG] Embedding model download failed: ${downloadResult.message}`)
+          return false
+        }
+      } catch (err) {
+        logger.error('[RAG] Embedding model not found and could not be downloaded:', err)
+        return false
+      }
+    }
+    this.embeddingModelVerified = true
+    return true
+  }
 
   private async _initializeQdrantClient() {
     if (!this.qdrantInitPromise) {
@@ -238,31 +299,15 @@ export class RagService {
     onProgress?: (percent: number) => Promise<void>
   ): Promise<{ chunks: number } | null> {
     try {
+      const embeddingDimension = await this._getEmbeddingDimension()
       await this._ensureCollection(
         RagService.CONTENT_COLLECTION_NAME,
-        RagService.EMBEDDING_DIMENSION
+        embeddingDimension
       )
 
-      if (!this.embeddingModelVerified) {
-        const allModels = await this.ollamaService.getModels(true)
-        const embeddingModel = allModels.find((model) => model.name === RagService.EMBEDDING_MODEL)
-
-        if (!embeddingModel) {
-          try {
-            const downloadResult = await this.ollamaService.downloadModel(RagService.EMBEDDING_MODEL)
-            if (!downloadResult.success) {
-              throw new Error(downloadResult.message || 'Unknown error during model download')
-            }
-          } catch (modelError) {
-            logger.error(
-              `[RAG] Embedding model ${RagService.EMBEDDING_MODEL} not found locally and failed to download:`,
-              modelError
-            )
-            this.embeddingModelVerified = false
-            return null
-          }
-        }
-        this.embeddingModelVerified = true
+      const embeddingReady = await this._ensureEmbeddingReady()
+      if (!embeddingReady) {
+        return null
       }
 
       // TokenChunker uses character-based tokenization (1 char = 1 token)
@@ -284,8 +329,6 @@ export class RagService {
 
       // Extract text from chunk results
       const chunks = chunkResults.map((chunk) => chunk.text)
-
-      const ollamaClient = await this.ollamaService.getClient()
 
       // Prepare all chunk texts with prefix and truncation
       const prefixedChunks: string[] = []
@@ -320,12 +363,8 @@ export class RagService {
 
         logger.debug(`[RAG] Embedding batch ${batchIdx + 1}/${totalBatches} (${batch.length} chunks)`)
 
-        const response = await ollamaClient.embed({
-          model: RagService.EMBEDDING_MODEL,
-          input: batch,
-        })
-
-        embeddings.push(...response.embeddings)
+        const batchEmbeddings = await this._generateEmbeddings(batch)
+        embeddings.push(...batchEmbeddings)
 
         if (onProgress) {
           const progress = ((batchStart + batch.length) / prefixedChunks.length) * 100
@@ -675,9 +714,10 @@ export class RagService {
     try {
       logger.debug(`[RAG] Starting similarity search for query: "${query}"`)
 
+      const embeddingDimension = await this._getEmbeddingDimension()
       await this._ensureCollection(
         RagService.CONTENT_COLLECTION_NAME,
-        RagService.EMBEDDING_DIMENSION
+        embeddingDimension
       )
 
       // Check if collection has any points
@@ -690,18 +730,10 @@ export class RagService {
         return []
       }
 
-      if (!this.embeddingModelVerified) {
-        const allModels = await this.ollamaService.getModels(true)
-        const embeddingModel = allModels.find((model) => model.name === RagService.EMBEDDING_MODEL)
-
-        if (!embeddingModel) {
-          logger.warn(
-            `[RAG] ${RagService.EMBEDDING_MODEL} not found. Cannot perform similarity search.`
-          )
-          this.embeddingModelVerified = false
-          return []
-        }
-        this.embeddingModelVerified = true
+      const embeddingReady = await this._ensureEmbeddingReady()
+      if (!embeddingReady) {
+        logger.warn('[RAG] Embedding provider not ready. Cannot perform similarity search.')
+        return []
       }
 
       // Preprocess query for better matching
@@ -710,8 +742,6 @@ export class RagService {
       logger.debug(`[RAG] Extracted keywords: [${keywords.join(', ')}]`)
 
       // Generate embedding for the query with search_query prefix
-      const ollamaClient = await this.ollamaService.getClient()
-
       // Ensure query doesn't exceed token limit
       const prefixTokens = this.estimateTokenCount(RagService.SEARCH_QUERY_PREFIX)
       const maxQueryTokens = RagService.MAX_SAFE_TOKENS - prefixTokens
@@ -729,10 +759,7 @@ export class RagService {
         return []
       }
 
-      const response = await ollamaClient.embed({
-        model: RagService.EMBEDDING_MODEL,
-        input: [prefixedQuery],
-      })
+      const queryEmbeddings = await this._generateEmbeddings([prefixedQuery])
 
       // Perform semantic search with a higher limit to enable reranking
       const searchLimit = limit * 3 // Get more results for reranking
@@ -741,7 +768,7 @@ export class RagService {
       )
 
       const searchResults = await this.qdrant!.search(RagService.CONTENT_COLLECTION_NAME, {
-        vector: response.embeddings[0],
+        vector: queryEmbeddings[0],
         limit: searchLimit,
         score_threshold: scoreThreshold,
         with_payload: true,

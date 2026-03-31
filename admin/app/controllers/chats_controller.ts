@@ -11,9 +11,14 @@ export default class ChatsController {
   constructor(private chatService: ChatService, private systemService: SystemService) {}
 
   async inertia({ inertia, response }: HttpContext) {
-    const aiAssistantInstalled = await this.systemService.checkServiceInstalled(SERVICE_NAMES.OLLAMA)
-    if (!aiAssistantInstalled) {
-      return response.status(404).json({ error: 'AI Assistant service not installed' })
+    const chatProvider = (await KVStore.getValue('ai.chatProvider')) ?? 'ollama'
+    const isExternalProvider = chatProvider === 'openai_compatible'
+
+    if (!isExternalProvider) {
+      const aiAssistantInstalled = await this.systemService.checkServiceInstalled(SERVICE_NAMES.OLLAMA)
+      if (!aiAssistantInstalled) {
+        return response.status(404).json({ error: 'AI Assistant service not installed' })
+      }
     }
     
     const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')

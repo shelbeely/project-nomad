@@ -55,17 +55,54 @@ export default class SettingsController {
     }
 
     async models({ inertia }: HttpContext) {
-        const availableModels = await this.ollamaService.getAvailableModels({ sort: 'pulls', recommendedOnly: false, query: null, limit: 15 });
-        const installedModels = await this.ollamaService.getModels();
+        const chatProvider = (await KVStore.getValue('ai.chatProvider')) ?? 'ollama'
+        const externalApiKey = (await KVStore.getValue('ai.externalApiKey')) ?? ''
+        const externalApiBaseUrl = (await KVStore.getValue('ai.externalApiBaseUrl')) ?? ''
+        const externalChatModel = (await KVStore.getValue('ai.externalChatModel')) ?? ''
+        const embeddingProvider = (await KVStore.getValue('ai.embeddingProvider')) ?? 'ollama'
+        const externalEmbeddingApiKey = (await KVStore.getValue('ai.externalEmbeddingApiKey')) ?? ''
+        const externalEmbeddingApiBaseUrl = (await KVStore.getValue('ai.externalEmbeddingApiBaseUrl')) ?? ''
+        const externalEmbeddingModel = (await KVStore.getValue('ai.externalEmbeddingModel')) ?? ''
+        const externalEmbeddingDimension = (await KVStore.getValue('ai.externalEmbeddingDimension')) ?? ''
+
+        let availableModels: any[] = []
+        let installedModels: any[] = []
+
+        // Available models come from the Nomad API (not Ollama), so they are always fetchable
+        try {
+            const result = await this.ollamaService.getAvailableModels({ sort: 'pulls', recommendedOnly: false, query: null, limit: 15 })
+            availableModels = result?.models || []
+        } catch {
+            availableModels = []
+        }
+
+        // Installed models require Ollama running; skip gracefully when using external provider
+        if (chatProvider === 'ollama') {
+            try {
+                installedModels = await this.ollamaService.getModels() || []
+            } catch {
+                installedModels = []
+            }
+        }
+
         const chatSuggestionsEnabled = await KVStore.getValue('chat.suggestionsEnabled')
         const aiAssistantCustomName = await KVStore.getValue('ai.assistantCustomName')
         return inertia.render('settings/models', {
             models: {
-                availableModels: availableModels?.models || [],
-                installedModels: installedModels || [],
+                availableModels,
+                installedModels,
                 settings: {
                     chatSuggestionsEnabled: chatSuggestionsEnabled ?? false,
                     aiAssistantCustomName: aiAssistantCustomName ?? '',
+                    chatProvider,
+                    externalApiKey,
+                    externalApiBaseUrl,
+                    externalChatModel,
+                    embeddingProvider,
+                    externalEmbeddingApiKey,
+                    externalEmbeddingApiBaseUrl,
+                    externalEmbeddingModel,
+                    externalEmbeddingDimension,
                 }
             }
         });
