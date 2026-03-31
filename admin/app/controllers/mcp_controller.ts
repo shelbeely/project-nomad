@@ -12,6 +12,7 @@ import logger from '@adonisjs/core/services/logger'
 import { NOMAD_MCP_TOOLS } from '../mcp/tools.js'
 import { SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { MapService } from '#services/map_service'
+import env from '#start/env'
 
 type McpContent = { type: 'text'; text: string }
 type McpResult = { content: McpContent[]; isError?: boolean }
@@ -22,6 +23,14 @@ function ok(data: unknown): McpResult {
 
 function err(message: string): McpResult {
   return { isError: true, content: [{ type: 'text', text: message }] }
+}
+
+// JSON-RPC 2.0 helpers
+function jsonRpcResult(id: unknown, result: unknown) {
+  return { jsonrpc: '2.0', id, result }
+}
+function jsonRpcError(id: unknown, code: number, message: string, data?: unknown) {
+  return { jsonrpc: '2.0', id, error: { code, message, ...(data !== undefined && { data }) } }
 }
 
 @inject()
@@ -38,22 +47,112 @@ export default class McpController {
     private iaMirrorService: IaMirrorService
   ) {}
 
-  /** GET /mcp/tools — return all registered tool definitions */
+  /** GET /mcp/tools — return all registered tool definitions (REST convenience) */
   tools(_ctx: HttpContext) {
     return { tools: NOMAD_MCP_TOOLS }
   }
 
-  /** POST /mcp/call — execute a tool by name */
+  /**
+   * POST /mcp — full MCP JSON-RPC 2.0 endpoint.
+   *
+   * Handles the MCP protocol lifecycle:
+   *   initialize            → server info + capability negotiation
+   *   tools/list            → list all available tools
+   *   tools/call            → execute a named tool
+   *   notifications/initialized → client ready notification (no response)
+   *
+   * Also accepts a simplified REST envelope { name, arguments } for
+   * backwards-compat with the original POST /mcp/call route.
+   */
+  async jsonRpc({ request, response }: HttpContext) {
+    const body = request.body() as Record<string, unknown>
+
+    // ── Simple REST envelope (backwards compat) ──────────────────────────────
+    // { name: "...", arguments: {...} }  — not a JSON-RPC call
+    if (body?.name && body?.jsonrpc === undefined) {
+      return this._handleRestCall(body, response)
+    }
+
+    // ── JSON-RPC 2.0 envelope ────────────────────────────────────────────────
+    if (body?.jsonrpc !== '2.0') {
+      return response.status(400).json(jsonRpcError(null, -32600, 'Invalid Request: jsonrpc must be "2.0"'))
+    }
+
+    const id = body.id ?? null
+    const method = body.method as string | undefined
+    const params = (body.params ?? {}) as Record<string, unknown>
+
+    if (!method) {
+      return response.json(jsonRpcError(id, -32600, 'Invalid Request: method is required'))
+    }
+
+    logger.info(`[McpController] JSON-RPC method: ${method}`)
+
+    try {
+      switch (method) {
+        // ── Protocol handshake ──────────────────────────────────────────────
+        case 'initialize': {
+          const clientVersion = (params.protocolVersion as string) ?? 'unknown'
+          logger.info(`[McpController] MCP client initializing, protocol: ${clientVersion}`)
+          return response.json(
+            jsonRpcResult(id, {
+              protocolVersion: '2024-11-05',
+              capabilities: { tools: { listChanged: false } },
+              serverInfo: {
+                name: 'project-nomad',
+                version: '1.0.0',
+                description: 'Project N.O.M.A.D. — offline AI-agent knowledge infrastructure',
+              },
+              instructions:
+                'Use tools/list to discover available NOMAD tools and tools/call to execute them. ' +
+                'All tools work fully offline after initial setup.',
+            })
+          )
+        }
+
+        // ── Notification (no response) ─────────────────────────────────────
+        case 'notifications/initialized':
+          return response.status(204).send('')
+
+        // ── Tool list ──────────────────────────────────────────────────────
+        case 'tools/list':
+          return response.json(jsonRpcResult(id, { tools: NOMAD_MCP_TOOLS }))
+
+        // ── Tool call ──────────────────────────────────────────────────────
+        case 'tools/call': {
+          const name = params.name as string | undefined
+          const args = (params.arguments ?? {}) as Record<string, unknown>
+          if (!name) {
+            return response.json(jsonRpcError(id, -32602, 'Invalid params: name is required'))
+          }
+          const toolResult = await this._dispatch(name, args)
+          return response.json(jsonRpcResult(id, toolResult))
+        }
+
+        default:
+          return response.json(jsonRpcError(id, -32601, `Method not found: ${method}`))
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      logger.error(`[McpController] JSON-RPC error for method "${method}": ${msg}`)
+      return response.json(jsonRpcError(id, -32603, 'Internal error', msg))
+    }
+  }
+
+  /** POST /mcp/call — execute a tool by name (REST convenience) */
   async call({ request, response }: HttpContext) {
-    const body = request.body() as { name?: string; arguments?: Record<string, unknown> }
-    const name = body?.name
-    const args: Record<string, unknown> = body?.arguments ?? {}
+    return this._handleRestCall(request.body(), response)
+  }
+
+  private async _handleRestCall(body: Record<string, unknown>, response: HttpContext['response']) {
+    const name = body?.name as string | undefined
+    const args: Record<string, unknown> = (body?.arguments as Record<string, unknown>) ?? {}
 
     if (!name) {
       return response.status(400).json(err('Missing required field: name'))
     }
 
-    logger.info(`[McpController] tool call: ${name}`)
+    logger.info(`[McpController] REST tool call: ${name}`)
 
     try {
       const result = await this._dispatch(name, args)

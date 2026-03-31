@@ -46,6 +46,73 @@ export class ZimService {
     }
   }
 
+  /**
+   * Search article titles and snippets from the locally running Kiwix server.
+   *
+   * Kiwix exposes a search endpoint at GET /search?pattern=<query> that returns
+   * an HTML results page. We parse it with cheerio to extract article titles
+   * and links, returning clean structured JSON for agent consumption.
+   */
+  async searchArticles(
+    query: string,
+    limit = 5
+  ): Promise<{ title: string; snippet: string; path: string }[]> {
+    const kiwixUrl = await this.dockerService.getServiceURL(SERVICE_NAMES.KIWIX)
+    if (!kiwixUrl) {
+      throw new Error('Kiwix service is not installed or running.')
+    }
+
+    const searchUrl = `${kiwixUrl}/search?pattern=${encodeURIComponent(query)}&books=`
+    const response = await axios.get<string>(searchUrl, {
+      responseType: 'text',
+      timeout: 8000,
+      headers: { Accept: 'text/html' },
+    })
+
+    // Lazy import cheerio to keep bundle lightweight
+    const { load } = await import('cheerio')
+    const $ = load(response.data)
+
+    const results: { title: string; snippet: string; path: string }[] = []
+
+    // Kiwix search results are rendered as <article> or <div class="result"> blocks
+    // Try several selector patterns for compatibility across Kiwix versions
+    const selectors = ['article', '.search-result', '.result', 'li.entry']
+    let found = false
+
+    for (const sel of selectors) {
+      const items = $(sel)
+      if (items.length > 0) {
+        items.slice(0, limit).each((_i, el) => {
+          const link = $(el).find('a').first()
+          const title = link.text().trim() || $(el).find('h2, h3, strong').first().text().trim()
+          const path = link.attr('href') ?? ''
+          const snippet = $(el).find('p, .snippet, .description').first().text().trim()
+          if (title) {
+            results.push({ title, snippet, path: path.startsWith('/') ? path : `/${path}` })
+          }
+        })
+        found = true
+        break
+      }
+    }
+
+    // Fallback: grab any anchor tags that look like article links
+    if (!found || results.length === 0) {
+      $('a[href*="/A/"]')
+        .slice(0, limit)
+        .each((_i, el) => {
+          const title = $(el).text().trim()
+          const path = $(el).attr('href') ?? ''
+          if (title && path) {
+            results.push({ title, snippet: '', path })
+          }
+        })
+    }
+
+    return results.slice(0, limit)
+  }
+
   async listRemote({
     start,
     count,

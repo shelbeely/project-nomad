@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto'
 /**
  * OpenAI-compatible proxy controller.
  *
- * Exposes the two endpoints most commonly required by LangChain, CrewAI,
+ * Exposes the two endpoints most commonly required by LangChain, AutoGen,
  * and any framework that accepts an OpenAI-compatible base URL:
  *
  *   GET  /v1/models                — list available models
