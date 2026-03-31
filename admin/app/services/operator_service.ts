@@ -422,35 +422,24 @@ export class OperatorService {
     return false
   }
 
-  // ── OpenClaw detection ────────────────────────────────────────────────────
-
-  /**
-   * Check if the OpenClaw gateway container is reachable.
-   * OpenClaw runs at localhost:18789 when installed.
-   */
-  async isOpenClawAvailable(): Promise<boolean> {
-    try {
-      const { default: axios } = await import('axios')
-      const res = await axios.get('http://127.0.0.1:18789/health', { timeout: 2000 })
-      return res.status === 200
-    } catch {
-      return false
-    }
-  }
+  // ── Operator status snapshot ─────────────────────────────────────────────
 
   /**
    * Get a status snapshot for the operator dashboard.
+   *
+   * Note: OpenClaw is an optional sidecar that calls NOMAD's own agent APIs
+   * (POST /v1/chat/completions and POST /mcp).  The Operator UI's built-in
+   * agent loop uses the exact same LlmService + MCP tools — they are the
+   * same execution path, not alternatives.
    */
   async getOperatorStatus(): Promise<{
-    openClaw: boolean
     provider: string
     models: string[]
     services: { service_name: string; friendly_name: string | null; installed: boolean; installation_status: string }[]
     pendingApprovals: number
     activeTasks: number
   }> {
-    const [openClaw, models, services, pendingApprovals, activeTasks] = await Promise.allSettled([
-      this.isOpenClawAvailable(),
+    const [models, services, pendingApprovals, activeTasks] = await Promise.allSettled([
       this.llmService.getInstalledModels(),
       this.systemService.getServices({ installedOnly: false }),
       OperatorApproval.query().where('status', 'pending').count('* as total'),
@@ -458,7 +447,6 @@ export class OperatorService {
     ])
 
     return {
-      openClaw: openClaw.status === 'fulfilled' ? openClaw.value : false,
       provider: this.llmService.provider,
       models: models.status === 'fulfilled' ? (models.value ?? []).map((m) => m.name) : [],
       services:

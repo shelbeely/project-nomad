@@ -3,11 +3,10 @@ import {
   IconCheck,
   IconX,
   IconLoader2,
-  IconDatabase,
   IconAlertTriangle,
   IconBrain,
   IconCloudComputing,
-  IconBolt,
+  IconRobot,
 } from '@tabler/icons-react'
 
 export type ServiceInfo = {
@@ -18,7 +17,6 @@ export type ServiceInfo = {
 }
 
 export type OperatorStatus = {
-  openClaw: boolean
   provider: string
   models: string[]
   services: ServiceInfo[]
@@ -44,6 +42,7 @@ export default function SystemStatusPanel({ status }: { status: OperatorStatus }
     (s) => s.installed && s.installation_status === 'running'
   )
   const installedServices = status.services.filter((s) => s.installed)
+  const agentReady = status.models.length > 0
 
   return (
     <div className="flex flex-col gap-3 h-full">
@@ -66,14 +65,14 @@ export default function SystemStatusPanel({ status }: { status: OperatorStatus }
           )}
         </div>
         <div className="rounded-lg bg-surface-secondary/30 p-2 flex flex-col gap-0.5">
-          <span className="text-[10px] text-text-secondary uppercase tracking-wide">OpenClaw</span>
-          {status.openClaw ? (
+          <span className="text-[10px] text-text-secondary uppercase tracking-wide">Agent</span>
+          {agentReady ? (
             <span className="flex items-center gap-1 text-xs text-desert-green">
-              <IconBolt size={11} /> Active
+              <IconRobot size={11} /> Ready
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-xs text-text-secondary">
-              <IconX size={11} /> Offline
+            <span className="flex items-center gap-1 text-xs text-yellow-500">
+              <IconX size={11} /> No model
             </span>
           )}
         </div>
