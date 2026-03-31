@@ -12,7 +12,7 @@ import logger from '@adonisjs/core/services/logger'
 import { NOMAD_MCP_TOOLS } from '../mcp/tools.js'
 import { SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import { MapService } from '#services/map_service'
-import env from '#start/env'
+
 
 type McpContent = { type: 'text'; text: string }
 type McpResult = { content: McpContent[]; isError?: boolean }
@@ -300,7 +300,7 @@ export default class McpController {
     return ok(
       results.map((r) => ({
         text: r.text,
-        source: r.source,
+        source: r.metadata?.source ?? null,
         score: r.score,
       }))
     )
