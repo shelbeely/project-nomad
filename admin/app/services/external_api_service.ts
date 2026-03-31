@@ -39,7 +39,7 @@ export class ExternalApiService {
     const baseUrl = ((await KVStore.getValue('ai.externalEmbeddingApiBaseUrl')) ?? '').trim() || chatBaseUrl
     const model = ((await KVStore.getValue('ai.externalEmbeddingModel')) ?? '').trim() || DEFAULT_EXTERNAL_EMBEDDING_MODEL
     const dimensionStr = (await KVStore.getValue('ai.externalEmbeddingDimension')) ?? ''
-    const dimension = dimensionStr ? parseInt(dimensionStr, 10) || DEFAULT_EXTERNAL_EMBEDDING_DIMENSION : DEFAULT_EXTERNAL_EMBEDDING_DIMENSION
+    const dimension = parseInt(dimensionStr, 10) || DEFAULT_EXTERNAL_EMBEDDING_DIMENSION
     return { apiKey, baseUrl, model, dimension }
   }
 

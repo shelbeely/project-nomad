@@ -68,7 +68,8 @@ export default class SettingsController {
         let availableModels: any[] = []
         let installedModels: any[] = []
 
-        // Available models come from the Nomad API (not Ollama), so they are always fetchable
+        // Available models come from the Nomad API (not Ollama), so they don't require Ollama to be running.
+        // A try-catch is still used in case of network or API errors.
         try {
             const result = await this.ollamaService.getAvailableModels({ sort: 'pulls', recommendedOnly: false, query: null, limit: 15 })
             availableModels = result?.models || []

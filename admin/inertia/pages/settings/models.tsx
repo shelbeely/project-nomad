@@ -481,7 +481,7 @@ export default function ModelsPage(props: {
                   onClick={handleForceRefresh}
                   icon="IconRefresh"
                   loading={isForceRefreshing}
-                  className='mt-1'
+                  className="mt-1"
                 >
                   Refresh Models
                 </StyledButton>
