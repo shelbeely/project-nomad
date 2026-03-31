@@ -143,6 +143,7 @@ export class SystemService {
         'description',
         'icon',
         'powered_by',
+        'source_repo',
         'display_order',
         'container_image',
         'available_update_version'
@@ -174,6 +175,7 @@ export class SystemService {
         status: status ? status.status : 'unknown',
         ui_location: service.ui_location || '',
         powered_by: service.powered_by,
+        source_repo: service.source_repo,
         display_order: service.display_order,
         container_image: service.container_image,
         available_update_version: service.available_update_version,

@@ -16,6 +16,8 @@
 
 Project N.O.M.A.D. is a self-contained, offline-first knowledge and education server packed with critical tools, knowledge, and AI to keep you informed and empowered—anytime, anywhere.
 
+NOMAD is also **AI agent-first**: every capability is exposed as a callable tool via an MCP JSON-RPC 2.0 endpoint (`/mcp`), an OpenAI-compatible inference API (`/v1`), and a REST agent API (`/api/agent/*`) — so autonomous agents, LangChain pipelines, and tools like OpenClaw can talk directly to NOMAD's local services.
+
 ## Installation & Quickstart
 Project N.O.M.A.D. can be installed on any Debian-based operating system (we recommend Ubuntu). Installation is completely terminal-based, and all tools and resources are designed to be accessed through the browser, so there's no need for a desktop environment if you'd rather setup N.O.M.A.D. as a "server" and access it through other clients.
 
@@ -37,8 +39,10 @@ For more control over the installation process, copy and paste the [Docker Compo
 N.O.M.A.D. is a management UI ("Command Center") and API that orchestrates a collection of containerized tools and resources via [Docker](https://www.docker.com/). It handles installation, configuration, and updates for everything — so you don't have to.
 
 **Built-in capabilities include:**
-- **AI Chat with Knowledge Base** — local AI chat powered by [Ollama](https://ollama.com/), with document upload and semantic search (RAG via [Qdrant](https://qdrant.tech/))
+- **AI Chat with Knowledge Base** — local AI chat powered by [Ollama](https://ollama.com/), with document upload and semantic search (RAG via [Qdrant](https://qdrant.tech/)); can also route through [OpenRouter](https://openrouter.ai/) for cloud models
+- **AI Agent Layer** — MCP JSON-RPC 2.0 (`/mcp`), OpenAI-compatible API (`/v1`), agent status/setup/run endpoints (`/api/agent/*`), and a built-in Agent Console UI; supports multimodal input, tool calling, and agentic loops
 - **Information Library** — offline Wikipedia, medical references, ebooks, and more via [Kiwix](https://kiwix.org/)
+- **Internet Archive Mirror** — browse and cache 38M+ books, audio, video, and documents via [dweb-mirror](https://github.com/internetarchive/dweb-mirror)
 - **Education Platform** — Khan Academy courses with progress tracking via [Kolibri](https://learningequality.org/kolibri/)
 - **Offline Maps** — downloadable regional maps via [ProtoMaps](https://protomaps.com)
 - **Data Tools** — encryption, encoding, and analysis via [CyberChef](https://gchq.github.io/CyberChef/)
@@ -48,12 +52,43 @@ N.O.M.A.D. is a management UI ("Command Center") and API that orchestrates a col
 
 N.O.M.A.D. also includes built-in tools like a Wikipedia content selector, ZIM library manager, and content explorer.
 
+## Agent API
+
+NOMAD exposes every capability as a callable tool so autonomous agents and external systems can drive it programmatically. All agent endpoints are on the same port as the web UI (default `8080`).
+
+| Purpose | Method | Path |
+|---|---|---|
+| System status snapshot | `GET` | `/api/agent/status` |
+| Headless setup (install services, select Wikipedia, pull models) | `POST` | `/api/agent/setup` |
+| Autonomous agentic task runner | `POST` | `/api/agent/run` |
+| OpenAI-format tool list | `GET` | `/api/agent/tools` |
+| MCP tool list (REST) | `GET` | `/mcp/tools` |
+| MCP JSON-RPC 2.0 | `POST` | `/mcp` |
+| OpenAI-compat chat completions | `POST` | `/v1/chat/completions` |
+| OpenAI-compat models list | `GET` | `/v1/models` |
+| System health | `GET` | `/api/health` |
+| Agent card | `GET` | `/.well-known/agents.json` |
+| MCP server info | `GET` | `/.well-known/mcp.json` |
+| OpenAI plugin manifest | `GET` | `/.well-known/ai-plugin.json` |
+| OpenAPI spec | `GET` | `/openapi.json` |
+| Skills manifest | `GET` | `/skills.md` |
+
+**Authentication:** Set `NOMAD_API_KEY` in `management_compose.yaml` to protect agent/MCP/v1 routes. Pass the key via `X-NOMAD-Key: <key>` or `Authorization: Bearer <key>`. Leave unset for open local-network access (default).
+
+**Point any OpenAI-compatible client at NOMAD:**
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://nomad.local:8080/v1", api_key="none")
+```
+
 ## What's Included
 
 | Capability | Powered By | What You Get |
 |-----------|-----------|-------------|
 | Information Library | Kiwix | Offline Wikipedia, medical references, survival guides, ebooks |
 | AI Assistant | Ollama + Qdrant | Built-in chat with document upload and semantic search |
+| AI Agent Layer | Built-in | MCP tools, OpenAI-compat API, Agent Console UI, tool calling, agentic loops |
+| Internet Archive Mirror | dweb-mirror | 38M+ books, audio, video, and historical documents — cacheable offline |
 | Education Platform | Kolibri | Khan Academy courses, progress tracking, multi-user support |
 | Offline Maps | ProtoMaps | Downloadable regional maps with search and navigation |
 | Data Tools | CyberChef | Encryption, encoding, hashing, and data analysis |
@@ -98,11 +133,13 @@ Project N.O.M.A.D. is designed for offline usage. An internet connection is only
 To test internet connectivity, N.O.M.A.D. attempts to make a request to Cloudflare's utility endpoint, `https://1.1.1.1/cdn-cgi/trace` and checks for a successful response.
 
 ## About Security
-By design, Project N.O.M.A.D. is intended to be open and available without hurdles - it includes no authentication. If you decide to connect your device to a local network after install (e.g. for allowing other devices to access it's resources), you can block/open ports to control which services are exposed.
+By design, Project N.O.M.A.D. is intended to be open and available without hurdles on trusted local networks. If you connect your device to a local network after install, you can block/open ports to control which services are exposed.
 
-**Will authentication be added in the future?** Maybe. It's not currently a priority, but if there's enough demand for it, we may consider building in an optional authentication layer in a future release to support uses cases where multiple users need access to the same instance but with different permission levels (e.g. family use with parental controls, classroom use with teacher/admin accounts, etc.). We have a suggestion for this on our public roadmap, so if this is something you'd like to see, please upvote it here: https://roadmap.projectnomad.us/posts/1/user-authentication-please-build-in-user-auth-with-admin-user-roles
+**Optional API key authentication** — The agent and AI endpoints (`/mcp/*`, `/v1/*`, `/api/agent/*`) can be protected by setting `NOMAD_API_KEY` in your `management_compose.yaml`. When set, all requests to those routes must include the key via `X-NOMAD-Key: <key>` or `Authorization: Bearer <key>`. The main web UI and standard app endpoints are unaffected. Leave it unset for unauthenticated local-network access (the default).
 
-For now, we recommend using network-level controls to manage access if you're planning to expose your N.O.M.A.D. instance to other devices on a local network. N.O.M.A.D. is not designed to be exposed directly to the internet, and we strongly advise against doing so unless you really know what you're doing, have taken appropriate security measures, and understand the risks involved.
+**Will broader authentication be added in the future?** Maybe. It's not currently a priority, but if there's enough demand we may consider building an optional authentication layer. See the [public roadmap](https://roadmap.projectnomad.us/posts/1/user-authentication-please-build-in-user-auth-with-admin-user-roles) to upvote it.
+
+N.O.M.A.D. is not designed to be exposed directly to the internet. We strongly advise against doing so unless you have taken appropriate security measures and understand the risks involved.
 
 ## Contributing
 Contributions are welcome and appreciated! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to the project.
@@ -120,28 +157,59 @@ Contributions are welcome and appreciated! Please see [CONTRIBUTING.md](CONTRIBU
 Project N.O.M.A.D. is licensed under the [Apache License 2.0](LICENSE).
 
 ## Helper Scripts
-Once installed, Project N.O.M.A.D. has a few helper scripts should you ever need to troubleshoot issues or perform maintenance that can't be done through the Command Center. All of these scripts are found in Project N.O.M.A.D.'s install directory, `/opt/project-nomad`
+Once installed, Project N.O.M.A.D. has helper scripts for troubleshooting and maintenance. All scripts live in `/opt/project-nomad`.
 
-###
+### NOMAD Management
 
-###### Start Script - Starts all installed project containers
+###### Start all NOMAD containers
 ```bash
 sudo bash /opt/project-nomad/start_nomad.sh
 ```
-###
 
-###### Stop Script - Stops all installed project containers
+###### Stop all NOMAD containers
 ```bash
 sudo bash /opt/project-nomad/stop_nomad.sh
 ```
-###
 
-###### Update Script - Attempts to pull the latest images for the Command Center and its dependencies (i.e. mysql) and recreate the containers. Note: this *only* updates the Command Center containers. It does not update the installable application containers - that should be done through the Command Center UI
+###### Update the Command Center (management stack only — update apps through the UI)
 ```bash
 sudo bash /opt/project-nomad/update_nomad.sh
 ```
 
-###### Uninstall Script - Need to start fresh? Use the uninstall script to make your life easy. Note: this cannot be undone!
+###### Uninstall N.O.M.A.D. (cannot be undone)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/install/uninstall_nomad.sh -o uninstall_nomad.sh && sudo bash uninstall_nomad.sh
+```
+
+### OpenClaw Agent Runtime
+
+OpenClaw is an optional autonomous AI agent that runs as a sibling container alongside NOMAD, sharing the same Docker network so it can call NOMAD's MCP tools, Ollama, Qdrant, and Kiwix directly by container hostname.
+
+###### Install OpenClaw (interactive — prompts for provider and token)
+```bash
+curl -fsSL https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/install/install_openclaw.sh -o install_openclaw.sh && sudo bash install_openclaw.sh
+```
+
+During installation you choose which AI provider OpenClaw uses:
+- **Ollama (default, fully offline)** — routes through NOMAD's local Ollama via `http://nomad_admin:8080/v1`
+- **OpenRouter (cloud)** — routes to `https://openrouter.ai/api/v1` using your API key
+
+To switch provider after install, edit `/opt/project-nomad/openclaw_compose.yaml` and change `OPENAI_BASE_URL` and `OPENAI_API_KEY`, then run:
+```bash
+docker compose -f /opt/project-nomad/openclaw_compose.yaml up -d
+```
+
+###### Start OpenClaw
+```bash
+sudo bash /opt/project-nomad/start_openclaw.sh
+```
+
+###### Stop OpenClaw
+```bash
+sudo bash /opt/project-nomad/stop_openclaw.sh
+```
+
+###### Uninstall OpenClaw
+```bash
+sudo bash /opt/project-nomad/uninstall_openclaw.sh
 ```

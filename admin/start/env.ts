@@ -60,4 +60,31 @@ export default await Env.create(new URL('../', import.meta.url), {
   |----------------------------------------------------------
   */
   NOMAD_API_URL: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Variables for configuring the AI provider
+  |
+  | AI_PROVIDER: 'ollama' (default, fully offline) or 'openrouter'
+  | When set to 'openrouter', all chat inference is routed through
+  | OpenRouter's OpenAI-compatible API instead of local Ollama.
+  | Embeddings (RAG) always use local Ollama regardless of this setting.
+  |----------------------------------------------------------
+  */
+  AI_PROVIDER: Env.schema.enum.optional(['ollama', 'openrouter'] as const),
+  OPENROUTER_API_KEY: Env.schema.string.optional(),
+  OPENROUTER_BASE_URL: Env.schema.string.optional(),
+  OPENROUTER_DEFAULT_MODEL: Env.schema.string.optional(),
+  /** Vision/multimodal model used when messages contain image or video content. */
+  OPENROUTER_VISION_MODEL: Env.schema.string.optional(),
+
+  /*
+  |----------------------------------------------------------
+  | Optional API key for agent / remote access authentication.
+  | When set, all /mcp/*, /v1/*, and /api/agent/* routes require
+  | either:  X-NOMAD-Key: <key>  or  Authorization: Bearer <key>
+  | Leave unset (default) to allow unauthenticated local-network access.
+  |----------------------------------------------------------
+  */
+  NOMAD_API_KEY: Env.schema.string.optional(),
 })

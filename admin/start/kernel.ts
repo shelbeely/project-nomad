@@ -45,4 +45,6 @@ router.use([
  * Named middleware collection must be explicitly assigned to
  * the routes or the routes group.
  */
-export const middleware = router.named({})
+export const middleware = router.named({
+  apiKey: () => import('#middleware/api_key_middleware'),
+})

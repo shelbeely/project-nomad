@@ -1,0 +1,100 @@
+# Project N.O.M.A.D. — OpenClaw Agent Runtime
+#
+# This compose file deploys the OpenClaw autonomous agent as a *sibling* to the
+# NOMAD managed-services stack.  It shares the same Docker bridge network
+# (project-nomad_default) so OpenClaw can reach every NOMAD container by its
+# Docker service name, e.g.:
+#
+#   NOMAD OpenAI-compat  → http://nomad_admin:8080/v1
+#   NOMAD MCP tools      → http://nomad_admin:8080/mcp
+#   Ollama (direct)      → http://nomad_ollama:11434
+#   Qdrant               → http://nomad_qdrant:6333
+#   Kiwix                → http://nomad_kiwix_server:8080
+#
+# ─── AI Provider ──────────────────────────────────────────────────────────────
+# OPENCLAW_AI_PROVIDER controls which LLM backend OpenClaw uses.
+#
+#   ollama (default, fully offline)
+#     Routes through NOMAD's OpenAI-compat layer which itself calls local Ollama.
+#     OPENAI_BASE_URL → http://nomad_admin:8080/v1
+#     OPENAI_API_KEY  → "none"  (or your NOMAD_API_KEY if auth is enabled)
+#
+#   openrouter (cloud, requires an API key)
+#     Routes directly to OpenRouter's API.
+#     OPENAI_BASE_URL → https://openrouter.ai/api/v1
+#     OPENAI_API_KEY  → sk-or-v1-...
+#
+# Change OPENCLAW_AI_PROVIDER and the two OPENAI_* vars below, then run:
+#   docker compose -f openclaw_compose.yaml up -d
+# ──────────────────────────────────────────────────────────────────────────────
+name: openclaw
+
+services:
+  openclaw:
+    image: openclaw/gateway:latest
+    pull_policy: always
+    container_name: openclaw_gateway
+    restart: unless-stopped
+    # Bind only to localhost — use an SSH tunnel for remote access.
+    # Change to "0.0.0.0:18789:18789" only if a reverse proxy / firewall
+    # is protecting this port; the gateway has no built-in rate limiting.
+    ports:
+      - "127.0.0.1:18789:18789"
+    volumes:
+      - /opt/project-nomad/openclaw/config:/home/node/.openclaw
+      - /opt/project-nomad/openclaw/workspace:/home/node/workspace
+    environment:
+      # ── Gateway auth ──────────────────────────────────────────────────────
+      # IMPORTANT: Replace this placeholder before deploying!
+      # The install_openclaw.sh script does this automatically.
+      # Running this file directly without changing this value leaves the
+      # dashboard completely unprotected.
+      - OPENCLAW_GATEWAY_TOKEN=replaceme
+
+      # ── AI Provider selection ─────────────────────────────────────────────
+      # "ollama" (default) or "openrouter"
+      - OPENCLAW_AI_PROVIDER=ollama
+
+      # ── Ollama / local provider (active when OPENCLAW_AI_PROVIDER=ollama) ─
+      # Routes through NOMAD's provider-agnostic OpenAI-compat layer.
+      # If you set NOMAD_API_KEY in management_compose.yaml, put that value
+      # in OPENAI_API_KEY instead of "none".
+      - OPENAI_BASE_URL=http://nomad_admin:8080/v1
+      - OPENAI_API_KEY=none
+
+      # ── OpenRouter provider (active when OPENCLAW_AI_PROVIDER=openrouter) ─
+      # To switch to OpenRouter, set the two vars above to:
+      #   OPENAI_BASE_URL=https://openrouter.ai/api/v1
+      #   OPENAI_API_KEY=sk-or-v1-<your-key>
+      # Then set a default model below.
+
+      # ── Default model ─────────────────────────────────────────────────────
+      # Ollama example:       llama3.2:3b
+      # OpenRouter examples:  openai/gpt-4o-mini  |  anthropic/claude-3-haiku
+      # Leave unset to let OpenClaw pick from the available model list.
+      # - OPENCLAW_DEFAULT_MODEL=llama3.2:3b
+
+      # ── NOMAD MCP tool server ─────────────────────────────────────────────
+      # Registers NOMAD's full MCP tool set so OpenClaw agents can invoke any
+      # nomad_* tool (nomad_search_knowledge, nomad_chat, nomad_control_service…)
+      - OPENCLAW_MCP_SERVERS=nomad:http://nomad_admin:8080/mcp
+      # If NOMAD_API_KEY is set, authenticate MCP calls:
+      # - OPENCLAW_MCP_NOMAD_TOKEN=replaceme
+
+      # ── Workspace / ports ─────────────────────────────────────────────────
+      - OPENCLAW_WORKSPACE_DIR=/home/node/workspace
+      - OPENCLAW_GATEWAY_PORT=18789
+    networks:
+      - nomad-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18789/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ── Join the NOMAD Docker network as an external participant ──────────────────
+# The NOMAD management stack must already be running (it creates this network).
+networks:
+  nomad-net:
+    external: true
+    name: project-nomad_default

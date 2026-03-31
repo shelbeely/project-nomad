@@ -18,6 +18,16 @@ export default class ZimController {
     return await this.zimService.list()
   }
 
+  async searchArticles({ request, response }: HttpContext) {
+    const query = request.qs().q as string | undefined
+    if (!query || !query.trim()) {
+      return response.status(400).json({ error: 'Missing required query parameter: q' })
+    }
+    const limit = Math.min(parseInt(request.qs().limit ?? '5', 10) || 5, 20)
+    const results = await this.zimService.searchArticles(query.trim(), limit)
+    return response.json({ results, query: query.trim() })
+  }
+
   async listRemote({ request }: HttpContext) {
     const payload = await request.validateUsing(listRemoteZimValidator)
     const { start = 0, count = 12, query } = payload

@@ -1,20 +1,22 @@
 import { ChatService } from '#services/chat_service'
+import { LlmService } from '#services/llm_service'
+import type { LlmMessage, LlmContentPart } from '#services/llm_service'
 import { OllamaService } from '#services/ollama_service'
 import { RagService } from '#services/rag_service'
 import { modelNameSchema } from '#validators/download'
 import { chatSchema, getAvailableModelsSchema } from '#validators/ollama'
 import { inject } from '@adonisjs/core'
 import type { HttpContext } from '@adonisjs/core/http'
-import { DEFAULT_QUERY_REWRITE_MODEL, RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
+import { RAG_CONTEXT_LIMITS, SYSTEM_PROMPTS } from '../../constants/ollama.js'
 import logger from '@adonisjs/core/services/logger'
-import type { Message } from 'ollama'
 
 @inject()
 export default class OllamaController {
   constructor(
     private chatService: ChatService,
     private ollamaService: OllamaService,
-    private ragService: RagService
+    private ragService: RagService,
+    private llmService: LlmService
   ) { }
 
   async availableModels({ request }: HttpContext) {
@@ -30,6 +32,10 @@ export default class OllamaController {
 
   async chat({ request, response }: HttpContext) {
     const reqData = await request.validateUsing(chatSchema)
+    // VineJS infers vine.any() content as optional-any; cast once to the stricter
+    // LlmMessage type that all downstream services expect. Content is always
+    // present at runtime because the API contract requires it.
+    const typedMessages = reqData.messages as unknown as LlmMessage[]
 
     // Flush SSE headers immediately so the client connection is open while
     // pre-processing (query rewriting, RAG lookup) runs in the background.
@@ -42,19 +48,19 @@ export default class OllamaController {
 
     try {
       // If there are no system messages in the chat inject system prompts
-      const hasSystemMessage = reqData.messages.some((msg) => msg.role === 'system')
+      const hasSystemMessage = typedMessages.some((msg) => msg.role === 'system')
       if (!hasSystemMessage) {
-        const systemPrompt = {
-          role: 'system' as const,
+        const systemPrompt: LlmMessage = {
+          role: 'system',
           content: SYSTEM_PROMPTS.default,
         }
         logger.debug('[OllamaController] Injecting system prompt')
-        reqData.messages.unshift(systemPrompt)
+        typedMessages.unshift(systemPrompt)
       }
 
       // Query rewriting for better RAG retrieval with manageable context
       // Will return user's latest message if no rewriting is needed
-      const rewrittenQuery = await this.rewriteQueryWithContext(reqData.messages)
+      const rewrittenQuery = await this.rewriteQueryWithContext(typedMessages)
 
       logger.debug(`[OllamaController] Rewritten query for RAG: "${rewrittenQuery}"`)
       if (rewrittenQuery) {
@@ -91,32 +97,39 @@ export default class OllamaController {
             .map((doc, idx) => `[Context ${idx + 1}] (Relevance: ${(doc.score * 100).toFixed(1)}%)\n${doc.text}`)
             .join('\n\n')
 
-          const systemMessage = {
-            role: 'system' as const,
+          const systemMessage: LlmMessage = {
+            role: 'system',
             content: SYSTEM_PROMPTS.rag_context(contextText),
           }
 
           // Insert system message at the beginning (after any existing system messages)
-          const firstNonSystemIndex = reqData.messages.findIndex((msg) => msg.role !== 'system')
+          const firstNonSystemIndex = typedMessages.findIndex((msg) => msg.role !== 'system')
           const insertIndex = firstNonSystemIndex === -1 ? 0 : firstNonSystemIndex
-          reqData.messages.splice(insertIndex, 0, systemMessage)
+          typedMessages.splice(insertIndex, 0, systemMessage)
         }
       }
 
       // Check if the model supports "thinking" capability for enhanced response generation
       // If gpt-oss model, it requires a text param for "think" https://docs.ollama.com/api/chat
-      const thinkingCapability = await this.ollamaService.checkModelHasThinking(reqData.model)
+      const thinkingCapability = await this.llmService.checkModelHasThinking(reqData.model)
       const think: boolean | 'medium' = thinkingCapability ? (reqData.model.startsWith('gpt-oss') ? 'medium' : true) : false
 
-      // Separate sessionId from the Ollama request payload — Ollama rejects unknown fields
-      const { sessionId, ...ollamaRequest } = reqData
+      // Build the typed LLM payload (sessionId is not passed to the LLM service)
+      const chatPayload = {
+        model: reqData.model,
+        messages: typedMessages,
+        stream: reqData.stream,
+        tools: reqData.tools,
+        tool_choice: reqData.tool_choice,
+      }
 
       // Save user message to DB before streaming if sessionId provided
       let userContent: string | null = null
+      const sessionId = reqData.sessionId
       if (sessionId) {
-        const lastUserMsg = [...reqData.messages].reverse().find((m) => m.role === 'user')
+        const lastUserMsg = [...typedMessages].reverse().find((m) => m.role === 'user')
         if (lastUserMsg) {
-          userContent = lastUserMsg.content
+          userContent = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '[multimodal message]'
           await this.chatService.addMessage(sessionId, 'user', userContent)
         }
       }
@@ -124,7 +137,7 @@ export default class OllamaController {
       if (reqData.stream) {
         logger.debug(`[OllamaController] Initiating streaming response for model: "${reqData.model}" with think: ${think}`)
         // Headers already flushed above
-        const stream = await this.ollamaService.chatStream({ ...ollamaRequest, think })
+        const stream = this.llmService.chatStream({ ...chatPayload, think })
         let fullContent = ''
         for await (const chunk of stream) {
           if (chunk.message?.content) {
@@ -147,8 +160,8 @@ export default class OllamaController {
         return
       }
 
-      // Non-streaming (legacy) path
-      const result = await this.ollamaService.chat({ ...ollamaRequest, think })
+      // Non-streaming path — includes tool_calls if model requested them
+      const result = await this.llmService.chat({ ...chatPayload, think })
 
       if (sessionId && result?.message?.content) {
         await this.chatService.addMessage(sessionId, 'assistant', result.message.content)
@@ -190,7 +203,7 @@ export default class OllamaController {
   }
 
   async installedModels({ }: HttpContext) {
-    return await this.ollamaService.getModels()
+    return await this.llmService.getInstalledModels()
   }
 
   /**
@@ -213,8 +226,14 @@ export default class OllamaController {
   }
 
   private async rewriteQueryWithContext(
-    messages: Message[]
+    messages: LlmMessage[]
   ): Promise<string | null> {
+    // Extract plain text from a message that may carry multimodal content parts
+    const textOf = (content: string | LlmContentPart[]): string => {
+      if (typeof content === 'string') return content
+      return content.filter((p) => p.type === 'text').map((p) => (p as { type: 'text'; text: string }).text).join(' ')
+    }
+
     try {
       // Get recent conversation history (last 6 messages for 3 turns)
       const recentMessages = messages.slice(-6)
@@ -223,31 +242,35 @@ export default class OllamaController {
       // little RAG benefit until there is enough context to matter.
       const userMessages = recentMessages.filter(msg => msg.role === 'user')
       if (userMessages.length <= 2) {
-        return userMessages[userMessages.length - 1]?.content || null
+        const last = userMessages[userMessages.length - 1]
+        return last ? textOf(last.content) || null : null
       }
 
       const conversationContext = recentMessages
         .map(msg => {
           const role = msg.role === 'user' ? 'User' : 'Assistant'
           // Truncate assistant messages to first 200 chars to keep context manageable
+          const raw = textOf(msg.content)
           const content = msg.role === 'assistant'
-            ? msg.content.slice(0, 200) + (msg.content.length > 200 ? '...' : '')
-            : msg.content
+            ? raw.slice(0, 200) + (raw.length > 200 ? '...' : '')
+            : raw
           return `${role}: "${content}"`
         })
         .join('\n')
 
-      const installedModels = await this.ollamaService.getModels(true)
-      const rewriteModelAvailable = installedModels?.some(model => model.name === DEFAULT_QUERY_REWRITE_MODEL)
+      const rewriteModelAvailable = await this.llmService.isRewriteModelAvailable()
       if (!rewriteModelAvailable) {
-        logger.warn(`[RAG] Query rewrite model "${DEFAULT_QUERY_REWRITE_MODEL}" not available. Skipping query rewriting.`)
+        const rewriteModel = this.llmService.getRewriteModel()
+        logger.warn(`[RAG] Query rewrite model "${rewriteModel}" not available. Skipping query rewriting.`)
         const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user')
-        return lastUserMessage?.content || null
+        return lastUserMessage ? textOf(lastUserMessage.content) || null : null
       }
 
+      const rewriteModel = this.llmService.getRewriteModel()
+
       // FUTURE ENHANCEMENT: allow the user to specify which model to use for rewriting
-      const response = await this.ollamaService.chat({
-        model: DEFAULT_QUERY_REWRITE_MODEL,
+      const response = await this.llmService.chat({
+        model: rewriteModel,
         messages: [
           {
             role: 'system',
@@ -269,7 +292,7 @@ export default class OllamaController {
       )
       // Fallback to last user message if rewriting fails
       const lastUserMessage = [...messages].reverse().find(msg => msg.role === 'user')
-      return lastUserMessage?.content || null
+      return lastUserMessage ? textOf(lastUserMessage.content) || null : null
     }
   }
 }

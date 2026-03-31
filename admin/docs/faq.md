@@ -68,6 +68,56 @@ This helps you balance content coverage against storage usage.
 
 ## AI Questions
 
+### What is the Agent Console?
+The Agent Console is a built-in browser interface at [/agent](/agent) for interacting with NOMAD's AI agent layer. It has three tabs:
+- **Status** — live system snapshot (services, models, downloads, disk)
+- **Runner** — give the agent a task in plain English and watch it call tools autonomously
+- **Tool Explorer** — browse and invoke any of NOMAD's 18+ MCP tools interactively
+
+### What are the wiki tools?
+NOMAD includes five MCP tools for deep access to your locally installed Kiwix wiki:
+
+- **`nomad_search_wikipedia`** — search article titles and snippets
+- **`wiki_open_article`** — fetch the full plain-text of any article
+- **`wiki_open_section`** — extract a named section (e.g. "Symptoms", "Treatment")
+- **`wiki_quote_passages`** — return sentences matching a query (useful for grounding AI responses with citations)
+- **`wiki_verify_claim`** — check a factual claim against your local wiki; returns `supported`, `contradicted`, or `not_found` with evidence
+
+These tools work entirely offline against your locally installed Kiwix ZIM files. They are callable from the Agent Console Tool Explorer, by external AI agents via MCP, or through the OpenAI-compatible `/v1` API.
+
+### Can NOMAD use a cloud AI model instead of local Ollama?
+Yes. Set `AI_PROVIDER=openrouter` and `OPENROUTER_API_KEY=sk-or-v1-...` in your `management_compose.yaml` and restart the stack. NOMAD will route all chat inference through OpenRouter. Embeddings (RAG/Knowledge Base) always use the local Ollama regardless of provider.
+
+To switch back to local: set `AI_PROVIDER=ollama` (or remove the variable entirely — `ollama` is the default).
+
+### Can external tools (LangChain, AutoGen, OpenClaw) talk to NOMAD?
+Yes. NOMAD exposes:
+- **MCP JSON-RPC 2.0** at `POST /mcp` — compatible with any MCP client
+- **OpenAI-compatible API** at `POST /v1/chat/completions` — point any OpenAI client at NOMAD's URL
+- **OpenAI tool/function list** at `GET /api/agent/tools`
+
+**Example (Python):**
+```python
+from openai import OpenAI
+client = OpenAI(base_url="http://nomad.local:8080/v1", api_key="none")
+```
+
+**Optional auth:** Set `NOMAD_API_KEY` in `management_compose.yaml` to require authentication on agent/MCP/v1 routes. Pass via `X-NOMAD-Key: <key>` header.
+
+### What is OpenClaw?
+OpenClaw is an optional autonomous AI agent that runs as a sibling Docker container alongside NOMAD on the same network. It can call all NOMAD MCP tools, chat with Ollama, and search Qdrant directly by container hostname — no internet needed. Install it with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Crosstalk-Solutions/project-nomad/refs/heads/main/install/install_openclaw.sh -o install_openclaw.sh && sudo bash install_openclaw.sh
+```
+
+Pass `--non-interactive` (or `-y`) to automate the install in CI/scripted environments. All options can be set via environment variables:
+
+```bash
+OPENCLAW_PROVIDER=openrouter OPENCLAW_OPENROUTER_KEY=sk-or-v1-... \
+  sudo -E bash install_openclaw.sh -y --model openai/gpt-4o-mini
+```
+
 ### How do I use the AI chat?
 1. Go to [AI Chat](/chat) from the Command Center
 2. Type your question or request

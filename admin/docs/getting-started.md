@@ -113,6 +113,49 @@ The Knowledge Base lets you upload documents so the AI can reference them when a
 
 ---
 
+### Agent Console — AI Agents & MCP Tools
+
+The Agent Console gives you a browser-based interface to NOMAD's AI agent layer. Access it at **[Agent Console →](/agent)**.
+
+**Three tabs:**
+- **Status** — live view of all services, AI provider, models, disk, and download queue
+- **Runner** — type a task in plain English and let the agent autonomously call tools to complete it
+- **Tool Explorer** — browse and invoke any MCP tool interactively from the browser
+
+The Agent Console uses the same MCP endpoint (`POST /mcp`) that external agents (LangChain, AutoGen, OpenClaw) use — anything you can do from the console, an external agent can automate.
+
+**To use the Runner:**
+1. Go to **[Agent Console →](/agent)**
+2. Click the **Runner** tab
+3. Type a task, e.g. "Search Wikipedia for water purification and summarize the key methods"
+4. The agent calls tools automatically and shows each step as it works
+
+---
+
+### Wiki Tools — Deep Wikipedia Access
+
+Beyond basic search, NOMAD exposes five MCP tools that let AI agents (and you, via the Tool Explorer) dig deep into your locally installed Kiwix wiki content:
+
+| Tool | What it does |
+|------|-------------|
+| `nomad_search_wikipedia` | Search article titles and snippets |
+| `wiki_open_article` | Fetch the full text of any article by title |
+| `wiki_open_section` | Extract a specific section (e.g. "Treatment", "History") |
+| `wiki_quote_passages` | Return relevant sentences matching a query — useful for citations |
+| `wiki_verify_claim` | Check a factual claim; returns `supported`, `contradicted`, or `not_found` plus evidence passages |
+
+All five tools query your **locally installed Kiwix content** — no internet required.
+
+**Example — verifying a claim from the Tool Explorer:**
+1. Go to **[Agent Console →](/agent)** → **Tool Explorer** tab
+2. Select `wiki_verify_claim`
+3. Enter: `"Boiling water for 1 minute kills all pathogens"`
+4. NOMAD searches your local wiki and returns a verdict with supporting passages
+
+**Note:** Wiki tools require the Information Library (Kiwix) to be installed with at least one ZIM file. Enable it during Easy Setup or install from the [Apps](/settings/apps) page.
+
+---
+
 ### Maps — Offline Navigation
 
 ![Offline maps viewer](/docs/maps.png)

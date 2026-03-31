@@ -3,6 +3,7 @@ import {
   IconHelp,
   IconMapRoute,
   IconPlus,
+  IconRobot,
   IconSettings,
   IconWifiOff,
 } from '@tabler/icons-react'
@@ -30,6 +31,16 @@ const MAPS_ITEM = {
 
 // System items shown after all apps
 const SYSTEM_ITEMS = [
+  {
+    label: 'Agent Console',
+    to: '/agent',
+    target: '',
+    description: 'Control AI agents, run tasks, explore MCP tools, and manage the agent API',
+    icon: <IconRobot size={48} />,
+    installed: true,
+    displayOrder: 49,
+    poweredBy: null,
+  },
   {
     label: 'Easy Setup',
     to: '/easy-setup',
