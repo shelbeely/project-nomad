@@ -52,7 +52,11 @@ All tools are callable via `POST /mcp` (JSON-RPC 2.0) or `POST /mcp/call` (REST)
 | `nomad_install_service` | Install a service by `service_name` |
 | `nomad_control_service` | Start / stop / restart a service |
 | `nomad_search_knowledge` | Semantic search across the RAG knowledge base |
-| `nomad_search_wikipedia` | Search offline Wikipedia (Kiwix) |
+| `nomad_search_wikipedia` | Search offline Wikipedia (Kiwix) — returns titles + snippets |
+| `wiki_open_article` | Fetch full plain-text of a Kiwix article by title |
+| `wiki_open_section` | Extract a named section from a Kiwix article |
+| `wiki_quote_passages` | Return keyword-matching sentences from local wiki content |
+| `wiki_verify_claim` | Verify a factual claim; returns `supported`/`contradicted`/`not_found` + evidence |
 | `nomad_chat` | Chat with the local LLM (RAG-augmented) |
 | `nomad_list_models` | List available AI models |
 | `nomad_download_model` | Queue an Ollama model download |
@@ -222,6 +226,8 @@ npm run dev
 1. Add definition to `admin/app/mcp/tools.ts` (`NOMAD_MCP_TOOLS` array)
 2. Add case to `McpController._dispatch()` in `admin/app/controllers/mcp_controller.ts`
 3. Implement the handler method (`_toolYourTool()`)
+
+**Wiki tool conventions** (tools backed by `ZimService`): place them between the `nomad_search_wikipedia` case and the `nomad_chat` case in `_dispatch()`, prefixed `wiki_`. The corresponding `ZimService` methods should fetch and parse HTML from the local Kiwix server via `this.dockerService.getServiceURL(SERVICE_NAMES.KIWIX)` and use `cheerio` for HTML parsing.
 
 ### Adding a new installable service
 1. Add name to `admin/constants/service_names.ts`

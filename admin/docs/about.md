@@ -6,6 +6,15 @@ While many similar offline survival computers are designed to be run on bare-min
 
 Since its initial release, NOMAD has grown to include built-in AI chat with a Knowledge Base for document-aware responses, a System Benchmark with a community leaderboard, curated content collections with tiered options, and an Easy Setup Wizard to get new users up and running quickly.
 
+This fork of the upstream [Crosstalk Solutions project-nomad](https://github.com/Crosstalk-Solutions/project-nomad) extends the platform with an **agent-first architecture**: every NOMAD capability is now exposed as a callable tool via an MCP JSON-RPC 2.0 endpoint (`/mcp`), an OpenAI-compatible inference API (`/v1`), and a REST agent API (`/api/agent/*`). New additions include:
+
+- **Agent Console** — browser UI for running autonomous AI agents and exploring MCP tools interactively
+- **Wiki Tools** — five MCP tools (`nomad_search_wikipedia`, `wiki_open_article`, `wiki_open_section`, `wiki_quote_passages`, `wiki_verify_claim`) for deep offline Wikipedia access by AI agents
+- **Internet Archive Mirror** — browse and cache books, audio, video, and historical documents from the Internet Archive offline
+- **OpenRouter Support** — route AI inference through cloud models when local hardware isn't available
+- **OpenClaw Integration** — optional sibling container that runs an autonomous AI agent on the same Docker network as NOMAD, with full access to all MCP tools
+- **Optional API Key Auth** — protect agent/MCP/v1 routes with `NOMAD_API_KEY`
+
 Project N.O.M.A.D. is open source, released under the [Apache License 2.0](https://github.com/Crosstalk-Solutions/project-nomad/blob/main/LICENSE).
 
 ## Links
