@@ -90,6 +90,56 @@ export const NOMAD_MCP_TOOLS: McpTool[] = [
       },
     },
   },
+  {
+    name: 'wiki_open_article',
+    description:
+      'Fetch the full plain-text content of a single article from the locally installed Kiwix wiki. Use search_wiki first to find the exact title.',
+    inputSchema: {
+      type: 'object',
+      required: ['title'],
+      properties: {
+        title: { type: 'string', description: 'Article title (e.g. "Water purification")' },
+      },
+    },
+  },
+  {
+    name: 'wiki_open_section',
+    description:
+      'Extract a specific named section from a locally installed Kiwix wiki article (e.g. "History", "Symptoms", "Treatment"). Returns only the text of that section.',
+    inputSchema: {
+      type: 'object',
+      required: ['title', 'section'],
+      properties: {
+        title: { type: 'string', description: 'Article title' },
+        section: { type: 'string', description: 'Section heading name (case-insensitive, partial match allowed)' },
+      },
+    },
+  },
+  {
+    name: 'wiki_quote_passages',
+    description:
+      'Find and return short relevant passages from the local Kiwix wiki that contain keywords from the query. Useful for grounding answers in cited text.',
+    inputSchema: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        query: { type: 'string', description: 'Topic or question to find passages for' },
+        limit: { type: 'integer', description: 'Max passages to return (default: 5, max: 10)' },
+      },
+    },
+  },
+  {
+    name: 'wiki_verify_claim',
+    description:
+      'Verify a factual claim against the locally installed Kiwix wiki. Returns a verdict (supported / contradicted / not_found) and the evidence passages found.',
+    inputSchema: {
+      type: 'object',
+      required: ['claim'],
+      properties: {
+        claim: { type: 'string', description: 'The factual claim to verify (e.g. "Boiling water for 1 minute kills all pathogens")' },
+      },
+    },
+  },
 
   // ─── AI Inference ─────────────────────────────────────────────────────────
   {

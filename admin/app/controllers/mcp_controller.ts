@@ -203,6 +203,16 @@ export default class McpController {
       case 'nomad_search_wikipedia':
         return this._toolSearchWikipedia(args)
 
+      // ─── Wiki tools ────────────────────────────────────────────────────────
+      case 'wiki_open_article':
+        return this._toolWikiOpenArticle(args)
+      case 'wiki_open_section':
+        return this._toolWikiOpenSection(args)
+      case 'wiki_quote_passages':
+        return this._toolWikiQuotePassages(args)
+      case 'wiki_verify_claim':
+        return this._toolWikiVerifyClaim(args)
+
       // ─── AI ────────────────────────────────────────────────────────────────
       case 'nomad_chat':
         return this._toolChat(args)
@@ -313,6 +323,37 @@ export default class McpController {
     const limit = typeof args.limit === 'number' ? Math.min(args.limit, 20) : 5
     const results = await this.zimService.searchArticles(query, limit)
     return ok(results)
+  }
+
+  private async _toolWikiOpenArticle(args: Record<string, unknown>): Promise<McpResult> {
+    const title = args.title as string | undefined
+    if (!title) return err('Missing required argument: title')
+    const result = await this.zimService.getArticle(title)
+    return ok(result)
+  }
+
+  private async _toolWikiOpenSection(args: Record<string, unknown>): Promise<McpResult> {
+    const title = args.title as string | undefined
+    const section = args.section as string | undefined
+    if (!title) return err('Missing required argument: title')
+    if (!section) return err('Missing required argument: section')
+    const result = await this.zimService.getSection(title, section)
+    return ok(result)
+  }
+
+  private async _toolWikiQuotePassages(args: Record<string, unknown>): Promise<McpResult> {
+    const query = args.query as string | undefined
+    if (!query) return err('Missing required argument: query')
+    const limit = typeof args.limit === 'number' ? Math.min(args.limit, 10) : 5
+    const passages = await this.zimService.quotePassages(query, limit)
+    return ok(passages)
+  }
+
+  private async _toolWikiVerifyClaim(args: Record<string, unknown>): Promise<McpResult> {
+    const claim = args.claim as string | undefined
+    if (!claim) return err('Missing required argument: claim')
+    const result = await this.zimService.verifyClaim(claim)
+    return ok(result)
   }
 
   private async _toolChat(args: Record<string, unknown>): Promise<McpResult> {

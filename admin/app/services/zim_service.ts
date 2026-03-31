@@ -112,6 +112,186 @@ export class ZimService {
     return results.slice(0, limit)
   }
 
+  /**
+   * Fetch the full plain-text content of a single article from the local
+   * Kiwix server.  Kiwix serves articles at:
+   *   GET /<book_id>/A/<url-encoded-title>
+   *
+   * Because we don't always know the book prefix we try a direct title path
+   * first, then fall back to using the search result path returned by
+   * searchArticles().
+   */
+  async getArticle(title: string): Promise<{ title: string; text: string; path: string }> {
+    const kiwixUrl = await this.dockerService.getServiceURL(SERVICE_NAMES.KIWIX)
+    if (!kiwixUrl) throw new Error('Kiwix service is not installed or running.')
+
+    // First try to find the article path via search to get the canonical book prefix
+    let articlePath: string | null = null
+    try {
+      const results = await this.searchArticles(title, 3)
+      const exact = results.find((r) => r.title.toLowerCase() === title.toLowerCase())
+      articlePath = exact?.path ?? results[0]?.path ?? null
+    } catch {
+      // fall through to direct path attempt
+    }
+
+    // Build URL: use search-derived path or fall back to /A/<title>
+    const url = articlePath
+      ? `${kiwixUrl}${articlePath.startsWith('/') ? articlePath : '/' + articlePath}`
+      : `${kiwixUrl}/A/${encodeURIComponent(title.replace(/ /g, '_'))}`
+
+    const response = await axios.get<string>(url, {
+      responseType: 'text',
+      timeout: 10000,
+      headers: { Accept: 'text/html' },
+    })
+
+    const $ = cheerioLoad(response.data)
+
+    // Remove navigation, scripts, styles, and other non-content elements
+    $('script, style, nav, header, footer, .navigation, #toc, .toc, .mw-editsection').remove()
+
+    const articleTitle = $('h1').first().text().trim() || title
+    const text = $('body')
+      .text()
+      .replace(/\s{3,}/g, '\n\n')
+      .trim()
+
+    return { title: articleTitle, text, path: url }
+  }
+
+  /**
+   * Fetch a specific named section from an article.  Sections are identified
+   * by their heading text (case-insensitive).  Returns the heading and all
+   * paragraph content until the next same-level heading.
+   */
+  async getSection(
+    title: string,
+    section: string
+  ): Promise<{ title: string; section: string; text: string }> {
+    const kiwixUrl = await this.dockerService.getServiceURL(SERVICE_NAMES.KIWIX)
+    if (!kiwixUrl) throw new Error('Kiwix service is not installed or running.')
+
+    // Locate article path via search
+    const results = await this.searchArticles(title, 3)
+    const match = results.find((r) => r.title.toLowerCase() === title.toLowerCase()) ?? results[0]
+    if (!match) throw new Error(`Article not found: "${title}"`)
+
+    const url = `${kiwixUrl}${match.path.startsWith('/') ? match.path : '/' + match.path}`
+    const response = await axios.get<string>(url, { responseType: 'text', timeout: 10000 })
+    const $ = cheerioLoad(response.data)
+    $('script, style, nav, .mw-editsection').remove()
+
+    const sectionLower = section.toLowerCase()
+    let sectionText = ''
+    let found = false
+
+    // Walk all headings; collect content between the matching one and the next
+    $('h1, h2, h3, h4, h5, h6').each((_i, el) => {
+      if (found) return // already collected
+      const headingText = $(el).text().replace(/\[edit\]/gi, '').trim()
+      if (headingText.toLowerCase().includes(sectionLower)) {
+        found = true
+        const parts: string[] = []
+        let sibling = $(el).next()
+        while (sibling.length > 0 && !sibling.is('h1, h2, h3, h4, h5, h6')) {
+          parts.push(sibling.text().trim())
+          sibling = sibling.next()
+        }
+        sectionText = parts.filter(Boolean).join('\n\n')
+      }
+    })
+
+    if (!found) throw new Error(`Section "${section}" not found in article "${title}"`)
+    return { title: match.title, section, text: sectionText }
+  }
+
+  /**
+   * Quote passages from an article that are relevant to a query.
+   * Splits the article into sentences and returns those containing
+   * any query keyword, up to the requested limit.
+   */
+  async quotePassages(
+    query: string,
+    limit = 5
+  ): Promise<{ passage: string; articleTitle: string; path: string }[]> {
+    const kiwixUrl = await this.dockerService.getServiceURL(SERVICE_NAMES.KIWIX)
+    if (!kiwixUrl) throw new Error('Kiwix service is not installed or running.')
+
+    const results = await this.searchArticles(query, 3)
+    if (results.length === 0) return []
+
+    const keywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+    const passages: { passage: string; articleTitle: string; path: string }[] = []
+
+    for (const result of results) {
+      if (passages.length >= limit) break
+      const url = `${kiwixUrl}${result.path.startsWith('/') ? result.path : '/' + result.path}`
+      try {
+        const response = await axios.get<string>(url, { responseType: 'text', timeout: 10000 })
+        const $ = cheerioLoad(response.data)
+        $('script, style, nav, .mw-editsection').remove()
+
+        const text = $('body').text().replace(/\s{3,}/g, ' ').trim()
+        // Split into sentences (naive but effective for encyclopedic text)
+        const sentences = text.match(/[^.!?]+[.!?]+/g) ?? []
+
+        for (const sentence of sentences) {
+          if (passages.length >= limit) break
+          const s = sentence.trim()
+          if (s.length < 20) continue
+          const sl = s.toLowerCase()
+          if (keywords.some((kw) => sl.includes(kw))) {
+            passages.push({ passage: s, articleTitle: result.title, path: result.path })
+          }
+        }
+      } catch (err) {
+        logger.warn(`[ZimService] quotePassages: failed to fetch ${url}: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+
+    return passages.slice(0, limit)
+  }
+
+  /**
+   * Verify a factual claim against the local Kiwix wiki.
+   * Searches for the claim, extracts relevant passages, and returns
+   * supporting and contradicting evidence found in the local content.
+   */
+  async verifyClaim(claim: string): Promise<{
+    claim: string
+    verdict: 'supported' | 'contradicted' | 'not_found'
+    evidence: { passage: string; articleTitle: string; path: string }[]
+  }> {
+    const passages = await this.quotePassages(claim, 8)
+    if (passages.length === 0) {
+      return { claim, verdict: 'not_found', evidence: [] }
+    }
+
+    const claimWords = new Set(
+      claim.toLowerCase().split(/\W+/).filter((w) => w.length > 3)
+    )
+
+    // Score each passage by keyword overlap and presence of negation words
+    const negationWords = ['not', 'no', 'never', 'false', 'incorrect', 'wrong', 'disputed', 'contrary']
+    const scored = passages.map((p) => {
+      const pl = p.passage.toLowerCase()
+      const overlap = [...claimWords].filter((w) => pl.includes(w)).length
+      const hasNegation = negationWords.some((n) => pl.includes(n))
+      return { ...p, overlap, hasNegation }
+    })
+
+    const topSupport = scored.filter((p) => !p.hasNegation && p.overlap >= 2)
+    const topContra = scored.filter((p) => p.hasNegation && p.overlap >= 1)
+
+    const verdict = topContra.length > 0 ? 'contradicted' : topSupport.length > 0 ? 'supported' : 'not_found'
+    const evidence = (topContra.length > 0 ? topContra : topSupport)
+      .slice(0, 4)
+      .map(({ passage, articleTitle, path }) => ({ passage, articleTitle, path }))
+
+    return { claim, verdict, evidence }
+  }
+
   async listRemote({
     start,
     count,
