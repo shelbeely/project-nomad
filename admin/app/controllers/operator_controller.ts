@@ -7,6 +7,7 @@ import { NOMAD_MCP_TOOLS } from '../mcp/tools.js'
 import OperatorTask from '../models/operator_task.js'
 import OperatorApproval from '../models/operator_approval.js'
 import type { OperatorArtifactType } from '../models/operator_artifact.js'
+import logger from '@adonisjs/core/services/logger'
 
 const MAX_GOAL_LENGTH = 4000
 const DEFAULT_MAX_ITERATIONS = 10
@@ -118,7 +119,7 @@ export default class OperatorController {
       })
       .catch((err) => {
         const msg = err instanceof Error ? err.message : String(err)
-        console.error(`[OperatorController] Unhandled runTask error for #${task.id}: ${msg}`)
+        logger.error(`[OperatorController] Unhandled runTask error for #${task.id}: ${msg}`)
       })
 
     return response.status(201).json({

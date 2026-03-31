@@ -54,6 +54,7 @@ interface ActiveTask {
   response: string | null
   finish_reason: string | null
   created_at: string
+  max_iterations: number
 }
 
 // ── Goal input suggestions ────────────────────────────────────────────────────
@@ -285,6 +286,7 @@ export default function OperatorPage({ operator }: OperatorPageProps) {
           response: data.response,
           finish_reason: data.finish_reason,
           created_at: data.created_at,
+          max_iterations: data.max_iterations ?? 10,
         })
 
         setLiveSteps(
@@ -357,6 +359,7 @@ export default function OperatorPage({ operator }: OperatorPageProps) {
         response: null,
         finish_reason: null,
         created_at: created.created_at,
+        max_iterations: maxIterations,
       })
       setSelectedTaskId(created.id)
       setLiveSteps([])
@@ -646,7 +649,7 @@ export default function OperatorPage({ operator }: OperatorPageProps) {
                       <PlanPanel
                         steps={liveSteps}
                         taskStatus={activeTask.status}
-                        maxIterations={activeTask ? 10 : maxIterations}
+                        maxIterations={activeTask.max_iterations}
                       />
                     </div>
 

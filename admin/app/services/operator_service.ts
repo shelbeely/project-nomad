@@ -15,6 +15,13 @@ import type { OperatorApprovalActionType } from '../models/operator_approval.js'
 import type { OperatorArtifactType } from '../models/operator_artifact.js'
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** How long to wait for a human approval before timing out and blocking the task. */
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
+
+// ---------------------------------------------------------------------------
 // Event shapes broadcast over SSE
 // ---------------------------------------------------------------------------
 
@@ -332,8 +339,8 @@ export class OperatorService {
           await task.merge({ status: 'blocked' }).save()
           await step.merge({ status: 'pending' }).save()
 
-          // Wait for approval (poll every 2s for up to 5 minutes)
-          const approved = await this._waitForApproval(approval.id, 300_000)
+          // Wait for approval (poll every 2s, up to APPROVAL_TIMEOUT_MS)
+          const approved = await this._waitForApproval(approval.id, APPROVAL_TIMEOUT_MS)
 
           if (!approved) {
             await step.merge({ status: 'failed', tool_result: { denied: true } }).save()

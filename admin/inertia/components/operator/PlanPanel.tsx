@@ -7,6 +7,7 @@ import {
   IconTools,
   IconChevronDown,
   IconChevronRight,
+  IconListDetails,
 } from '@tabler/icons-react'
 import { useState } from 'react'
 
