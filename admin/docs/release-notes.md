@@ -1,6 +1,44 @@
 # Release Notes
 
-## Version 1.30.3 - March 25, 2026
+## Version 1.31.0 — Agent-First Upgrade
+
+> **Note:** This release contains significant additions relative to the upstream Crosstalk Solutions source. All changes are additive and backwards-compatible with existing installations.
+
+### Features
+
+- **Agent Console** — New three-page UI at `/agent`: live system status dashboard, autonomous task Runner, and an interactive Tool Explorer that lets you invoke any MCP tool from the browser.
+- **MCP Tool Server** — Full Model Context Protocol (MCP) JSON-RPC 2.0 endpoint at `POST /mcp`, plus REST convenience routes `GET /mcp/tools` and `POST /mcp/call`. Exposes 14 tools: `nomad_health`, `nomad_list_services`, `nomad_install_service`, `nomad_control_service`, `nomad_search_knowledge`, `nomad_search_wikipedia`, `nomad_chat`, `nomad_list_models`, `nomad_download_model`, `nomad_list_map_regions`, `nomad_search_internet_archive`, `nomad_get_ia_item`, `nomad_storage_status`, `nomad_download_status`.
+- **OpenAI-Compatible API** — `/v1/chat/completions` and `/v1/models` endpoints. Supports streaming, tool calling, and multimodal input. Any OpenAI-compatible client (LangChain, AutoGen, etc.) can point at NOMAD's local inference.
+- **Agentic Task Runner** — `POST /api/agent/run` executes an autonomous reasoning loop: the LLM selects and calls MCP tools iteratively until the task is complete or the iteration ceiling is reached.
+- **Headless Agent Setup** — `POST /api/agent/setup` lets an AI agent install services, select a Wikipedia tier, and queue model downloads without the UI.
+- **Agent System Status** — `GET /api/agent/status` returns a full machine-readable snapshot (services, models, downloads, disk, internet, AI provider).
+- **Agent Discovery Layer** — `/.well-known/agents.json`, `/.well-known/mcp.json`, `/.well-known/ai-plugin.json`, `/openapi.json`, `/skills.md` for automatic agent and tool discovery.
+- **Internet Archive Mirror** — New installable service (`nomad_ia_mirror`) powered by [dweb-mirror](https://github.com/internetarchive/dweb-mirror). Caches books, audio, video, and historical documents from the Internet Archive for offline access on port 8500. MCP tools `nomad_search_internet_archive` and `nomad_get_ia_item` provide agent access.
+- **OpenRouter Support** — Set `AI_PROVIDER=openrouter` and `OPENROUTER_API_KEY` to route all chat inference through OpenRouter cloud models. Embeddings (RAG) always use local Ollama regardless of provider.
+- **Optional API Key Auth** — Set `NOMAD_API_KEY` in `management_compose.yaml` to protect `/mcp/*`, `/v1/*`, and `/api/agent/*` routes. Pass via `X-NOMAD-Key` header or `Authorization: Bearer`. Leave unset for open local-network access.
+- **OpenClaw Sibling Container** — New `install/openclaw_compose.yaml` deploys [OpenClaw](https://openclaw.ai) as a sibling Docker container on the same `project-nomad_default` bridge network. OpenClaw talks to NOMAD services (Ollama, Qdrant, Kiwix, MCP endpoint) by container hostname — no Docker socket nesting, no extra networking complexity.
+- **OpenClaw Provider Switching** — The OpenClaw container can use either NOMAD's local Ollama (default, fully offline) or OpenRouter (cloud) via two environment variable changes. The `install_openclaw.sh` installer prompts interactively and patches the compose file.
+- **Skills Manifest** — `/skills.md` and the `NOMAD_SKILLS` registry describe every NOMAD capability in the agentskills.io format for agent discovery.
+
+### Bug Fixes
+
+- **AI Chat**: Fixed multimodal (`LlmContentPart[]`) message content being incorrectly handled in RAG query rewriting — content is now extracted as plain text before being passed to the rewrite model.
+- **MCP**: Fixed RAG search results incorrectly referencing a top-level `source` property; now correctly reads `metadata.source`.
+- **MCP**: Removed unused `env` import that caused a TypeScript `noUnusedLocals` error.
+- **Migration**: Fixed `db.from().insert()` call in the IA Mirror migration to use the correct `db.table().insert()` AdonisJS Lucid API.
+- **Services**: Fixed `source_repo` missing from the `ServiceSlim` type and `getServices` query — MCP list-services tool now correctly returns repository links.
+- **Tool Calls**: Replaced silent `catch { return {} }` blocks in `LlmService` and `OpenAiCompatController` with a `safeParseToolArgs` helper that logs a warning with the raw argument string on JSON parse failure.
+
+### Improvements
+
+- **AI Chat**: `rewriteQueryWithContext` now handles both `string` and `LlmContentPart[]` message content types via a `textOf()` helper.
+- **Internet Archive**: Improved error message when the IA Mirror service is not installed — now includes both the MCP tool name and the HTTP endpoint path.
+- **MCP Tools**: `nomad_install_service` description now directs agents to call `nomad_list_services` for the current service list instead of a hardcoded (stale) enumeration.
+- **Agent Runner**: `DEFAULT_MAX_ITERATIONS` (10) and `MAX_ITERATIONS_CEILING` (25) extracted as named constants.
+- **Dependencies**: `cheerio` promoted from lazy dynamic import to module-level static import in `ZimService`.
+- **Docker Network**: `management_compose.yaml` now explicitly declares `project-nomad_default` with a stable name so sibling stacks can join it as an external network.
+
+
 
 ### Features
 

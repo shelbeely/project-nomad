@@ -27,10 +27,18 @@ Ask questions, get explanations, brainstorm ideas, or get help with writing. You
 
 **[Open AI Chat →](/chat)**
 
+### Use AI Agents
+Run autonomous AI agents that can search your knowledge base, install services, browse the Internet Archive, and more — all without leaving your server.
+
+**[Open Agent Console →](/agent)**
+
 ### Upload Documents to the Knowledge Base
 Upload PDFs, text files, and other documents for the AI to reference. The Knowledge Base uses semantic search to find relevant information from your uploaded documents when you ask questions.
 
 **[Open Knowledge Base →](/knowledge-base)**
+
+### Browse the Internet Archive
+Access books, historical documents, audio recordings, and video from the Internet Archive — cached locally for offline use (requires Internet Archive Mirror to be installed).
 
 ### View Offline Maps
 Navigate and explore maps without an internet connection. Download regions you need before going offline.
@@ -59,7 +67,10 @@ Or explore the **[Getting Started Guide](/docs/getting-started)** for a walkthro
 | I want to... | Go here |
 |--------------|---------|
 | Chat with the AI | [AI Chat →](/chat) |
+| Run an AI agent task | [Agent Console →](/agent) |
+| Explore MCP tools | [Tool Explorer →](/agent/tools) |
 | Upload documents for AI | [Knowledge Base →](/knowledge-base) |
+| Browse the Internet Archive | [Internet Archive →](/settings/apps) |
 | Download more content | [Install Apps →](/settings/apps) |
 | Add Wikipedia/reference content | [Content Explorer →](/settings/zim/remote-explorer) |
 | Manage installed content | [Content Manager →](/settings/zim) |
