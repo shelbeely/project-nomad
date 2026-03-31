@@ -7,6 +7,7 @@
 |
 */
 import AgentConsoleController from '#controllers/agent_console_controller'
+import OperatorController from '#controllers/operator_controller'
 import AgentController from '#controllers/agent_controller'
 import AgentDiscoveryController from '#controllers/agent_discovery_controller'
 import BenchmarkController from '#controllers/benchmark_controller'
@@ -246,4 +247,22 @@ router.get('/.well-known/ai-plugin.json', [AgentDiscoveryController, 'aiPlugin']
 router.get('/openapi.json', [AgentDiscoveryController, 'openApiSpec'])
 router.get('/agents.md', [AgentDiscoveryController, 'agentsMd'])
 router.get('/skills.md', [AgentDiscoveryController, 'skillsMd'])
+
+// ── AI Operator UI ─────────────────────────────────────────────────────────
+router.get('/operator', [OperatorController, 'index'])
+
+router
+  .group(() => {
+    router.get('/status', [OperatorController, 'operatorStatus'])
+    router.get('/tasks', [OperatorController, 'listTasks'])
+    router.post('/tasks', [OperatorController, 'createTask'])
+    router.get('/tasks/:id', [OperatorController, 'getTask'])
+    router.delete('/tasks/:id', [OperatorController, 'cancelTask'])
+    router.post('/approvals/:id/approve', [OperatorController, 'approveAction'])
+    router.post('/approvals/:id/deny', [OperatorController, 'denyAction'])
+    router.get('/artifacts', [OperatorController, 'listArtifacts'])
+    router.post('/artifacts', [OperatorController, 'createArtifact'])
+  })
+  .prefix('/api/operator')
+  .use(middleware.apiKey())
 
