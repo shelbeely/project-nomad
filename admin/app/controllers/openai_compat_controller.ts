@@ -5,6 +5,16 @@ import type { HttpContext } from '@adonisjs/core/http'
 import logger from '@adonisjs/core/services/logger'
 import { randomUUID } from 'node:crypto'
 
+/** Parse tool-call argument JSON strings, logging a warning on failure. */
+function safeParseToolArgs(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    logger.warn({ err, raw }, 'OpenAiCompatController: failed to parse tool-call arguments')
+    return {}
+  }
+}
+
 /**
  * OpenAI-compatible proxy controller.
  *
@@ -81,7 +91,7 @@ export default class OpenAiCompatController {
             type: 'function' as const,
             function: {
               name: tc.function.name,
-              arguments: (() => { try { return JSON.parse(tc.function.arguments) } catch { return {} } })(),
+              arguments: safeParseToolArgs(tc.function.arguments),
             },
           }))
         }

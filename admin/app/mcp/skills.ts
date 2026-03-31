@@ -10,6 +10,8 @@
  */
 
 import { stringify as yamlStringify } from 'yaml'
+
+export interface NomadSkill {
   id: string
   name: string
   description: string

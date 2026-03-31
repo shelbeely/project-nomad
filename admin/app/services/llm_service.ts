@@ -103,6 +103,20 @@ export type AgenticRunResult = {
  *
  * Embeddings (RagService) always use local Ollama regardless of AI_PROVIDER.
  */
+/**
+ * Safely parse a JSON string that may represent tool-call arguments.
+ * Returns an empty object and logs a warning on parse failure so that
+ * downstream code always receives a usable value without swallowing errors.
+ */
+function safeParseToolArgs(raw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    logger.warn({ err, raw }, 'LlmService: failed to parse tool-call arguments')
+    return {}
+  }
+}
+
 @inject()
 export class LlmService {
   constructor(private ollamaService: OllamaService) {}
@@ -472,10 +486,7 @@ export class LlmService {
         function: {
           name: tc.function.name,
           // OpenRouter returns arguments as a JSON string — parse it
-          arguments: (() => {
-            try { return JSON.parse(tc.function.arguments) }
-            catch { return {} }
-          })(),
+          arguments: safeParseToolArgs(tc.function.arguments),
         },
       })
     )
@@ -569,9 +580,7 @@ export class LlmService {
             type: 'function' as const,
             function: {
               name: tc.function.name,
-              arguments: (() => {
-                try { return JSON.parse(tc.function.arguments) } catch { return {} }
-              })(),
+              arguments: safeParseToolArgs(tc.function.arguments),
             },
           }))
           yield {

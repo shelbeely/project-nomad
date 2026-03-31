@@ -24,6 +24,7 @@ import WikipediaSelection from '#models/wikipedia_selection'
 import InstalledResource from '#models/installed_resource'
 import { RunDownloadJob } from '#jobs/run_download_job'
 import { SERVICE_NAMES } from '../../constants/service_names.js'
+import { load as cheerioLoad } from 'cheerio'
 import { CollectionManifestService } from './collection_manifest_service.js'
 import type { CategoryWithStatus } from '../../types/collections.js'
 
@@ -69,9 +70,7 @@ export class ZimService {
       headers: { Accept: 'text/html' },
     })
 
-    // Lazy import cheerio to keep bundle lightweight
-    const { load } = await import('cheerio')
-    const $ = load(response.data)
+    const $ = cheerioLoad(response.data)
 
     const results: { title: string; snippet: string; path: string }[] = []
 

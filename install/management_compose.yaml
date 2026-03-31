@@ -118,3 +118,10 @@ services:
 volumes:
   nomad-update-shared:
     driver: local
+
+# Explicitly declare the default network with a stable name so that the
+# OpenClaw agent runtime (openclaw_compose.yaml) and any other sibling
+# compose stacks can join it as an external network.
+networks:
+  default:
+    name: project-nomad_default
