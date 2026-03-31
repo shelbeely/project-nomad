@@ -6,14 +6,20 @@
 | The routes file is used for defining the HTTP routes.
 |
 */
+import AgentConsoleController from '#controllers/agent_console_controller'
+import AgentController from '#controllers/agent_controller'
+import AgentDiscoveryController from '#controllers/agent_discovery_controller'
 import BenchmarkController from '#controllers/benchmark_controller'
 import ChatsController from '#controllers/chats_controller'
 import DocsController from '#controllers/docs_controller'
 import DownloadsController from '#controllers/downloads_controller'
 import EasySetupController from '#controllers/easy_setup_controller'
 import HomeController from '#controllers/home_controller'
+import IaMirrorController from '#controllers/ia_mirror_controller'
 import MapsController from '#controllers/maps_controller'
+import McpController from '#controllers/mcp_controller'
 import OllamaController from '#controllers/ollama_controller'
+import OpenAiCompatController from '#controllers/openai_compat_controller'
 import RagController from '#controllers/rag_controller'
 import SettingsController from '#controllers/settings_controller'
 import SystemController from '#controllers/system_controller'
@@ -21,6 +27,7 @@ import CollectionUpdatesController from '#controllers/collection_updates_control
 import ZimController from '#controllers/zim_controller'
 import router from '@adonisjs/core/services/router'
 import transmit from '@adonisjs/transmit/services/main'
+import { middleware } from '#start/kernel'
 
 transmit.registerRoutes()
 
@@ -160,6 +167,7 @@ router
 router
   .group(() => {
     router.get('/list', [ZimController, 'list'])
+    router.get('/search', [ZimController, 'searchArticles'])
     router.get('/list-remote', [ZimController, 'listRemote'])
     router.get('/curated-categories', [ZimController, 'listCuratedCategories'])
     router.post('/download-remote', [ZimController, 'downloadRemote'])
@@ -187,3 +195,55 @@ router
     router.post('/settings', [BenchmarkController, 'updateSettings'])
   })
   .prefix('/api/benchmark')
+
+// ── Agent Console UI pages ─────────────────────────────────────────────────
+router.get('/agent', [AgentConsoleController, 'index'])
+router.get('/agent/run', [AgentConsoleController, 'run'])
+router.get('/agent/tools', [AgentConsoleController, 'tools'])
+
+// ── Agent API — apply optional API key middleware ──────────────────────────
+router
+  .group(() => {
+    router.get('/status', [AgentController, 'status'])
+    router.post('/setup', [AgentController, 'setup'])
+    router.post('/run', [AgentController, 'run'])
+    router.get('/tools', [AgentDiscoveryController, 'agentTools'])
+  })
+  .prefix('/api/agent')
+  .use(middleware.apiKey())
+
+// ── MCP endpoints ──────────────────────────────────────────────────────────
+router
+  .group(() => {
+    router.post('/', [McpController, 'jsonRpc'])   // JSON-RPC 2.0
+    router.get('/tools', [McpController, 'tools']) // REST convenience
+    router.post('/call', [McpController, 'call'])  // REST convenience
+  })
+  .prefix('/mcp')
+  .use(middleware.apiKey())
+
+// ── OpenAI-compatible API ──────────────────────────────────────────────────
+router
+  .group(() => {
+    router.get('/models', [OpenAiCompatController, 'models'])
+    router.post('/chat/completions', [OpenAiCompatController, 'chatCompletions'])
+  })
+  .prefix('/v1')
+  .use(middleware.apiKey())
+
+// ── Internet Archive mirror proxy ──────────────────────────────────────────
+router
+  .group(() => {
+    router.get('/search', [IaMirrorController, 'search'])
+    router.get('/item/:identifier', [IaMirrorController, 'item'])
+  })
+  .prefix('/api/ia')
+
+// ── Agent ecosystem discovery (no auth — these must be publicly readable) ──
+router.get('/.well-known/agents.json', [AgentDiscoveryController, 'agentCard'])
+router.get('/.well-known/mcp.json', [AgentDiscoveryController, 'mcpInfo'])
+router.get('/.well-known/ai-plugin.json', [AgentDiscoveryController, 'aiPlugin'])
+router.get('/openapi.json', [AgentDiscoveryController, 'openApiSpec'])
+router.get('/agents.md', [AgentDiscoveryController, 'agentsMd'])
+router.get('/skills.md', [AgentDiscoveryController, 'skillsMd'])
+
