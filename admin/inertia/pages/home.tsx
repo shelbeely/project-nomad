@@ -32,6 +32,16 @@ const MAPS_ITEM = {
 // System items shown after all apps
 const SYSTEM_ITEMS = [
   {
+    label: 'AI Operator',
+    to: '/operator',
+    target: '',
+    description: 'AI command copilot for NOMAD — monitor services, search knowledge, execute tasks',
+    icon: <IconBolt size={48} />,
+    installed: true,
+    displayOrder: 48,
+    poweredBy: null,
+  },
+  {
     label: 'Agent Console',
     to: '/agent',
     target: '',

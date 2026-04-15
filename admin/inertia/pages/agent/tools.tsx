@@ -5,7 +5,7 @@ import StyledSectionHeader from '~/components/StyledSectionHeader'
 import {
   IconTools,
   IconSearch,
-  IconPlay,
+  IconPlayerPlay,
   IconLoader2,
   IconChevronRight,
   IconAlertCircle,
@@ -241,7 +241,7 @@ export default function AgentToolsPage(props: {
                       disabled={running}
                       className="inline-flex items-center gap-2 rounded-lg bg-desert-green text-white px-4 py-2 text-sm font-medium hover:bg-desert-green/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {running ? <IconLoader2 size={15} className="animate-spin" /> : <IconPlay size={15} />}
+                      {running ? <IconLoader2 size={15} className="animate-spin" /> : <IconPlayerPlay size={15} />}
                       {running ? 'Calling…' : 'Call Tool'}
                     </button>
                     <a
